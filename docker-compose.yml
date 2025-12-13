@@ -1,0 +1,9 @@
+version: "3.9"
+services:
+  mineru:
+    image: mineru:latest
+    ports:
+      - "9000:9000"
+    volumes:
+      - ./data/intermediate:/data/intermediate
+    command: ["/bin/sh", "-c", "echo 'Configure MinerU here'"]

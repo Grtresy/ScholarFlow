@@ -1,0 +1,37 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# IDE & Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# macOS
+.DS_Store
+
+# Project-specific
+# Generated output files
+output/
+*.html
+*.pdf
+*.pptx
+
+# Test artifacts
+.pytest_cache/
+.coverage
+htmlcov/
+
+# API keys & sensitive files
+.env
+.env.local
+*.key
