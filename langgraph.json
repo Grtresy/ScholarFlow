@@ -1,0 +1,9 @@
+{
+  "dependencies": [
+    "./app"
+  ],
+  "graphs": {
+    "scholarflow": "./app/graph/workflow.py:compile_workflow"
+  },
+  "env": ".env"
+}

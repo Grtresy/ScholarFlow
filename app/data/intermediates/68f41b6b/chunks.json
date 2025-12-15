@@ -1,0 +1,32 @@
+[
+  {
+    "id": 1,
+    "title": "Cyclical Learning Rates for Training Neural Networks",
+    "text": "Leslie N. Smith\nU.S. Naval Research Laboratory"
+  },
+  {
+    "id": 2,
+    "title": "Abstract",
+    "text": "We propose a new method for setting the learning rate called cyclical learning rates."
+  },
+  {
+    "id": 3,
+    "title": "1. Introduction",
+    "text": "Training deep neural networks is time-consuming. Learning rate is critical."
+  },
+  {
+    "id": 4,
+    "title": "2. Method",
+    "text": "We use cyclical learning rates that vary between a lower and upper bound."
+  },
+  {
+    "id": 5,
+    "title": "3. Experiments",
+    "text": "Experiments on CIFAR-10 and ImageNet show improved performance."
+  },
+  {
+    "id": 6,
+    "title": "4. Conclusion",
+    "text": "Our method is simple and effective for training neural networks."
+  }
+]

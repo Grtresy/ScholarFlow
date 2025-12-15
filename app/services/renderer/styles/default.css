@@ -1,0 +1,229 @@
+/* Default Marp Theme for Academic Presentations */
+
+@viewport {
+  width: 1280px;
+  height: 720px;
+}
+
+/* Import Google Fonts for better typography */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&family=Source+Sans+Pro:wght@400;600;700&display=swap');
+
+/* Global slide settings */
+section {
+  font-family: 'Inter', 'Source Sans Pro', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  font-size: 28px;
+  line-height: 1.6;
+  color: #2c3e50;
+  background: linear-gradient(135deg, #ffffff 0%, #f8f9fa 100%);
+  padding: 60px 80px;
+}
+
+/* Slide number */
+section::after {
+  content: attr(data-marpit-pagination) '/' attr(data-marpit-pagination-total);
+  position: absolute;
+  bottom: 30px;
+  right: 50px;
+  font-size: 18px;
+  color: #95a5a6;
+  font-weight: 400;
+}
+
+/* Headers */
+h1 {
+  font-size: 48px;
+  font-weight: 700;
+  color: #2c3e50;
+  margin-bottom: 40px;
+  padding-bottom: 20px;
+  border-bottom: 4px solid #3498db;
+  line-height: 1.2;
+}
+
+h2 {
+  font-size: 36px;
+  font-weight: 600;
+  color: #34495e;
+  margin-bottom: 30px;
+  margin-top: 40px;
+}
+
+h3 {
+  font-size: 32px;
+  font-weight: 600;
+  color: #34495e;
+  margin-bottom: 25px;
+  margin-top: 30px;
+}
+
+/* Paragraphs */
+p {
+  margin-bottom: 20px;
+  text-align: justify;
+}
+
+/* Lists */
+ul, ol {
+  margin-bottom: 25px;
+  padding-left: 40px;
+}
+
+li {
+  margin-bottom: 12px;
+  line-height: 1.5;
+}
+
+li::marker {
+  color: #3498db;
+  font-weight: 600;
+}
+
+/* Code blocks */
+pre {
+  background: #2c3e50;
+  color: #ecf0f1;
+  padding: 25px;
+  border-radius: 8px;
+  overflow-x: auto;
+  margin: 25px 0;
+  font-family: 'Fira Code', 'Consolas', 'Monaco', 'Courier New', monospace;
+  font-size: 22px;
+  line-height: 1.4;
+}
+
+code {
+  background: #ecf0f1;
+  color: #e74c3c;
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-family: 'Fira Code', 'Consolas', 'Monaco', 'Courier New', monospace;
+  font-size: 0.9em;
+}
+
+pre code {
+  background: none;
+  color: inherit;
+  padding: 0;
+}
+
+/* Images */
+img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  margin: 20px 0;
+}
+
+/* Tables */
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 25px 0;
+  font-size: 24px;
+}
+
+th, td {
+  padding: 15px 20px;
+  text-align: left;
+  border-bottom: 2px solid #ecf0f1;
+}
+
+th {
+  background: #3498db;
+  color: white;
+  font-weight: 600;
+}
+
+tr:hover {
+  background: #f8f9fa;
+}
+
+/* Blockquotes */
+blockquote {
+  border-left: 5px solid #3498db;
+  padding-left: 25px;
+  margin: 25px 0;
+  font-style: italic;
+  color: #7f8c8d;
+}
+
+/* Links */
+a {
+  color: #3498db;
+  text-decoration: none;
+  border-bottom: 2px solid transparent;
+  transition: border-color 0.2s;
+}
+
+a:hover {
+  border-bottom-color: #3498db;
+}
+
+/* Math formulas */
+.math {
+  font-size: 1.1em;
+  text-align: center;
+  margin: 30px 0;
+}
+
+/* Highlighted text */
+mark {
+  background: #f39c12;
+  color: white;
+  padding: 2px 6px;
+  border-radius: 3px;
+}
+
+/* Title slide specific */
+section.title-slide {
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+}
+
+section.title-slide h1 {
+  font-size: 64px;
+  border: none;
+  color: white;
+  margin-bottom: 30px;
+}
+
+section.title-slide p {
+  font-size: 28px;
+  margin-bottom: 15px;
+  opacity: 0.9;
+}
+
+/* Two-column layout */
+.columns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 40px;
+  margin: 30px 0;
+}
+
+/* Custom footer */
+section.footer {
+  position: relative;
+}
+
+section.footer::before {
+  content: attr(data-footer);
+  position: absolute;
+  bottom: 30px;
+  left: 80px;
+  font-size: 16px;
+  color: #95a5a6;
+}
+
+/* Print styles */
+@media print {
+  section {
+    page-break-after: always;
+  }
+}
