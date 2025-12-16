@@ -18,7 +18,7 @@ from app.graph.nodes.stage1_processing import node_stage1_process, should_contin
 from app.graph.nodes.stage2_processing import node_stage2_process
 from app.graph.nodes.text_splitting import node_split_markdown
 from app.graph.state import TaskStatus, WorkflowState
-from app.storage.checkpointer import get_checkpointer
+from app.storage.checkpointer import get_checkpointer, initialize_checkpointer
 
 
 def route_after_stage1(state: WorkflowState) -> str:
@@ -189,6 +189,9 @@ async def run_workflow(
     Returns:
         Final workflow state
     """
+    # Ensure checkpointer is initialized
+    await initialize_checkpointer()
+
     workflow = get_workflow()
     thread_id = thread_id or initial_state.get("task_id", "default")
 
@@ -200,6 +203,15 @@ async def run_workflow(
 
     # Run workflow
     final_state = await workflow.ainvoke(initial_state, config)
+    # Save final state snapshot for later inspection/resume
+    try:
+        if final_state:
+            checkpointer = get_checkpointer()
+            task_id_to_save = thread_id or initial_state.get("task_id", "default")
+            checkpointer.save_state(task_id_to_save, WorkflowState(**final_state), "end")
+    except Exception:
+        # Non-fatal if persistence fails
+        pass
     return final_state
 
 
@@ -243,13 +255,20 @@ async def resume_workflow(
     Returns:
         Final workflow state
     """
+    # Ensure checkpointer is initialized
+    await initialize_checkpointer()
+
     workflow = get_workflow()
     checkpointer = get_checkpointer()
 
     # Load current state
     state = checkpointer.load_state(task_id)
     if not state:
-        raise ValueError(f"No state found for task {task_id}")
+        # Fallback: attempt to construct minimal state from feedback to continue
+        if human_feedback:
+            state = WorkflowState(task_id=task_id, human_feedback=human_feedback)
+        else:
+            raise ValueError(f"No state found for task {task_id}")
 
     # Inject human feedback if provided
     if human_feedback:
@@ -264,4 +283,10 @@ async def resume_workflow(
 
     # Resume workflow
     final_state = await workflow.ainvoke(state, config)
+    # Persist updated state
+    try:
+        if final_state:
+            checkpointer.save_state(task_id, WorkflowState(**final_state), "resume")
+    except Exception:
+        pass
     return final_state

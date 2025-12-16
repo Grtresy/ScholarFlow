@@ -12,8 +12,18 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 try:
-    from langgraph.checkpoint.sqlite import SqliteSaver
+    import aiosqlite
+    from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
     SQLITE_AVAILABLE = True
+
+    # Monkey patch for aiosqlite.Connection to add is_alive() method
+    # This is needed for compatibility with langgraph-checkpoint-sqlite 3.0.1
+    if not hasattr(aiosqlite.Connection, 'is_alive'):
+        def _is_alive(self) -> bool:
+            """Check if the connection is alive."""
+            return self._conn is not None
+        aiosqlite.Connection.is_alive = _is_alive
+
 except ImportError:
     from langgraph.checkpoint.memory import MemorySaver
     SQLITE_AVAILABLE = False
@@ -25,9 +35,12 @@ class WorkflowCheckpointer:
     """Workflow state persistence manager with SQLite backend.
 
     This class provides a high-level interface for saving and loading
-    workflow states, using SqliteSaver for LangGraph + JSON files for quick access.
+    workflow states, using AsyncSqliteSaver for LangGraph + JSON files for quick access.
 
     When SQLite is not available, falls back to MemorySaver for backward compatibility.
+
+    NOTE: AsyncSqliteSaver requires async initialization.
+    Call await checkpointer.initialize() after creating the instance.
     """
 
     def __init__(
@@ -35,7 +48,7 @@ class WorkflowCheckpointer:
         db_path: str = "data/workflows/checkpoints.db",
         json_path: str = "data/workflows/workflow_state.db",
     ):
-        """Initialize the checkpointer.
+        """Initialize the checkpointer (without opening connection).
 
         Args:
             db_path: Path for SQLite database (LangGraph checkpointer)
@@ -54,27 +67,49 @@ class WorkflowCheckpointer:
                 "Please install it with: uv add langgraph-checkpoint-sqlite"
             )
 
-        # Use from_conn_string with file path (not URI format)
-        # from_conn_string expects a plain file path string
-        self._saver_cm = SqliteSaver.from_conn_string(str(self.db_path))
-        self._saver = self._saver_cm.__enter__()
+        # Create the async context manager
+        self._saver_cm = None
+        self._saver = None
+        self._initialized = False
         self._use_sqlite = True
-        print(f"💾 Using SQLite checkpointer for persistent storage at {self.db_path.absolute()}")
+        print(f"💾 AsyncSqliteSaver ready for {self.db_path.absolute()}")
+
+    async def initialize(self) -> None:
+        """Initialize the async checkpointer using async with pattern.
+
+        Should be called once at startup:
+            checkpointer = get_checkpointer()
+            await checkpointer.initialize()
+        """
+        if not self._initialized:
+            # Use standard async with pattern from LangGraph docs
+            self._saver_cm = AsyncSqliteSaver.from_conn_string(str(self.db_path))
+            self._saver = await self._saver_cm.__aenter__()
+            self._initialized = True
+            print(f"✓ SQLite connection established")
 
     @property
     def saver(self):
         """Get the underlying saver for LangGraph integration.
 
         Returns:
-            SqliteSaver if SQLite available, MemorySaver otherwise
+            AsyncSqliteSaver if SQLite available, MemorySaver otherwise
+
+        Raises:
+            RuntimeError if not initialized yet
         """
+        if not self._initialized:
+            raise RuntimeError(
+                "Checkpointer not initialized. Call await checkpointer.initialize() first."
+            )
         return self._saver
 
-    def close(self) -> None:
+    async def close(self) -> None:
         """Close the checkpointer and cleanup resources."""
-        if self._saver_cm is not None:
+        if self._saver_cm is not None and self._initialized:
             try:
-                self._saver_cm.__exit__(None, None, None)
+                await self._saver_cm.__aexit__(None, None, None)
+                self._initialized = False
                 print("🔒 SQLite connection closed")
             except Exception as e:
                 print(f"⚠️  Error closing SQLite connection: {e}")
@@ -210,18 +245,49 @@ class WorkflowCheckpointer:
 _checkpointer: Optional[WorkflowCheckpointer] = None
 
 
-def get_checkpointer(
+async def initialize_checkpointer(
     db_path: str | None = None,
     json_path: str | None = None,
 ) -> WorkflowCheckpointer:
-    """Get or create global checkpointer instance with SQLite configuration.
+    """Initialize and return the global checkpointer instance.
+
+    Call this once at application startup:
+        checkpointer = await initialize_checkpointer()
 
     Args:
         db_path: Path for SQLite database (overrides default)
         json_path: Path for JSON file storage (overrides default)
 
     Returns:
-        WorkflowCheckpointer instance
+        Initialized WorkflowCheckpointer instance
+    """
+    global _checkpointer
+    if _checkpointer is None:
+        _checkpointer = WorkflowCheckpointer(
+            db_path=db_path or "data/workflows/checkpoints.db",
+            json_path=json_path or "data/workflows/workflow_state.db",
+        )
+        await _checkpointer.initialize()
+    return _checkpointer
+
+
+def get_checkpointer(
+    db_path: str | None = None,
+    json_path: str | None = None,
+) -> WorkflowCheckpointer:
+    """Get or create global checkpointer instance (without async initialization).
+
+    IMPORTANT: If checkpointer doesn't exist yet, it will be created but NOT initialized.
+    You must call await checkpointer.initialize() before using it.
+
+    For automatic initialization, use await initialize_checkpointer() instead.
+
+    Args:
+        db_path: Path for SQLite database (overrides default)
+        json_path: Path for JSON file storage (overrides default)
+
+    Returns:
+        WorkflowCheckpointer instance (may not be initialized yet)
     """
     global _checkpointer
     if _checkpointer is None:

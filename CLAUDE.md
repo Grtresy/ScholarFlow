@@ -456,3 +456,5 @@ LANGCHAIN_TRACING_V2=true
 - **Parallel processing** in Stage 1 is managed via loop-back edges, not multi-threading.
 - The system supports **three presentation styles** (academic/popular/business) defined in `app/graph/state.py:26`.
 - **Image references** from MinerU are preserved as URLs throughout the pipeline.
+
+代码运行与预期不符应该直接抛出异常，方便开发调试

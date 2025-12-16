@@ -4,6 +4,7 @@ from datetime import datetime
 from typing import Any, Dict, Literal
 
 from app.graph.state import TaskStatus, WorkflowState
+from app.storage.checkpointer import get_checkpointer
 
 
 def node_human_review(state: WorkflowState) -> Dict[str, Any]:
@@ -39,13 +40,22 @@ def node_human_review(state: WorkflowState) -> Dict[str, Any]:
     execution_log = state.get("execution_log", [])
     execution_log.append(log_entry)
 
-    return {
+    result = {
         "status": TaskStatus.HUMAN_REVIEW.value,
         "needs_human_review": True,
         "current_step": "等待人工审核",
         "updated_at": datetime.now().isoformat(),
         "execution_log": execution_log,
     }
+    # Persist paused state so HIL can resume later
+    try:
+        task_id = state.get("task_id") or "default"
+        checkpointer = get_checkpointer()
+        checkpointer.save_state(task_id, WorkflowState(**{**state, **result}), "human_review")
+    except Exception:
+        # Fail-safe: do not block the graph if persistence fails
+        pass
+    return result
 
 
 def node_process_feedback(state: WorkflowState) -> Dict[str, Any]:
@@ -78,7 +88,7 @@ def node_process_feedback(state: WorkflowState) -> Dict[str, Any]:
 
     if approved:
         # Approved - continue to Stage 2
-        return {
+        result = {
             "status": TaskStatus.STAGE2_PROCESSING.value,
             "approved": True,
             "needs_human_review": False,
@@ -88,9 +98,10 @@ def node_process_feedback(state: WorkflowState) -> Dict[str, Any]:
             "updated_at": datetime.now().isoformat(),
             "execution_log": execution_log,
         }
+        return result
     elif action == "regenerate":
         # Request to regenerate - go back to Stage 1
-        return {
+        result = {
             "status": TaskStatus.STAGE1_PROCESSING.value,
             "approved": False,
             "needs_human_review": False,
@@ -104,9 +115,10 @@ def node_process_feedback(state: WorkflowState) -> Dict[str, Any]:
             "updated_at": datetime.now().isoformat(),
             "execution_log": execution_log,
         }
+        return result
     elif action == "abort":
         # Abort the task
-        return {
+        result = {
             "status": TaskStatus.FAILED.value,
             "approved": False,
             "error_message": f"Task aborted by user. Reason: {comments}",
@@ -114,9 +126,16 @@ def node_process_feedback(state: WorkflowState) -> Dict[str, Any]:
             "updated_at": datetime.now().isoformat(),
             "execution_log": execution_log,
         }
+        try:
+            task_id = state.get("task_id") or "default"
+            checkpointer = get_checkpointer()
+            checkpointer.save_state(task_id, WorkflowState(**{**state, **result}), "process_feedback")
+        except Exception:
+            pass
+        return result
     else:
         # Default: pause the task for later review
-        return {
+        result = {
             "status": TaskStatus.PAUSED.value,
             "approved": False,
             "needs_human_review": True,
@@ -124,6 +143,14 @@ def node_process_feedback(state: WorkflowState) -> Dict[str, Any]:
             "updated_at": datetime.now().isoformat(),
             "execution_log": execution_log,
         }
+        # Persist paused state so it can be resumed
+        try:
+            task_id = state.get("task_id") or "default"
+            checkpointer = get_checkpointer()
+            checkpointer.save_state(task_id, WorkflowState(**{**state, **result}), "process_feedback")
+        except Exception:
+            pass
+        return result
 
 
 def route_after_feedback(state: WorkflowState) -> Literal["stage1", "stage2", "end"]:
