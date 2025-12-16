@@ -6,7 +6,7 @@ from typing import Any, Dict
 
 from app.graph.state import TaskStatus, WorkflowState
 from app.services.llm.provider import LLMClient
-from app.services.prompt_manager import get_prompt_manager
+from app.services.llm.prompts.prompt_templates import STAGE2_PROMPT
 
 
 async def node_stage2_process(state: WorkflowState) -> Dict[str, Any]:
@@ -35,9 +35,8 @@ async def node_stage2_process(state: WorkflowState) -> Dict[str, Any]:
         }
 
     try:
-        # Get prompt manager and format prompt
-        prompt_manager = get_prompt_manager()
-        prompt = prompt_manager.format_stage2_prompt(style=style, outline=merged_outline)
+        # Format prompt with style and outline
+        prompt = STAGE2_PROMPT.format(style=style.capitalize(), outline=merged_outline)
 
         # Call LLM asynchronously
         client = LLMClient()

@@ -1,125 +1,83 @@
 """Checkpointer implementation for workflow state persistence.
 
-This module provides persistent workflow state management using MariaDB/MySQL,
+This module provides persistent workflow state management using SQLite,
 replacing the in-memory MemorySaver for reliable state persistence across
 server restarts and supporting long-running workflows.
 """
 from __future__ import annotations
 
 import json
-import asyncio
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 try:
-    from langgraph.checkpoint.mysql import MySQLSaver
-    import aiomysql
-    MYSQL_AVAILABLE = True
+    from langgraph.checkpoint.sqlite import SqliteSaver
+    SQLITE_AVAILABLE = True
 except ImportError:
     from langgraph.checkpoint.memory import MemorySaver
-    MYSQL_AVAILABLE = False
+    SQLITE_AVAILABLE = False
 
 from app.graph.state import TaskStatus, WorkflowState
 
 
 class WorkflowCheckpointer:
-    """Workflow state persistence manager with MariaDB backend.
+    """Workflow state persistence manager with SQLite backend.
 
     This class provides a high-level interface for saving and loading
-    workflow states, using MySQLSaver for LangGraph + JSON files for quick access.
+    workflow states, using SqliteSaver for LangGraph + JSON files for quick access.
 
-    When MariaDB is not available, falls back to MemorySaver for backward compatibility.
+    When SQLite is not available, falls back to MemorySaver for backward compatibility.
     """
 
     def __init__(
         self,
-        db_path: str = "data/workflows/workflow_state.db",
-        mariadb_host: str = "localhost",
-        mariadb_port: int = 3306,
-        mariadb_user: str = "scholarflow",
-        mariadb_password: str = "",
-        mariadb_db: str = "scholarflow_state",
+        db_path: str = "data/workflows/checkpoints.db",
+        json_path: str = "data/workflows/workflow_state.db",
     ):
         """Initialize the checkpointer.
 
         Args:
-            db_path: Path for JSON file storage (fallback/quick access)
-            mariadb_host: MariaDB host
-            mariadb_port: MariaDB port
-            mariadb_user: MariaDB user
-            mariadb_password: MariaDB password
-            mariadb_db: MariaDB database name
+            db_path: Path for SQLite database (LangGraph checkpointer)
+            json_path: Path for JSON file storage (fallback/quick access)
         """
         self.db_path = Path(db_path)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
 
-        self.mariadb_config = {
-            "host": mariadb_host,
-            "port": mariadb_port,
-            "user": mariadb_user,
-            "password": mariadb_password,
-            "db": mariadb_db,
-        }
+        self.json_path = Path(json_path)
+        self.json_path.parent.mkdir(parents=True, exist_ok=True)
 
         # Initialize appropriate saver
-        if MYSQL_AVAILABLE:
-            self._saver = None
-            self._mysql_pool = None
-            self._use_mysql = True
-            print("💾 Using MariaDB checkpointer for persistent storage")
-        else:
-            self._saver = MemorySaver()
-            self._use_mysql = False
-            print("⚠️  MariaDB not available, using in-memory checkpointer (data will be lost on restart)")
-
-    async def initialize(self) -> None:
-        """Initialize the checkpointer and create MariaDB connection pool."""
-        if not self._use_mysql or self._saver is not None:
-            return
-
-        try:
-            # Create connection pool
-            self._mysql_pool = aiomysql.create_pool(
-                host=self.mariadb_config["host"],
-                port=self.mariadb_config["port"],
-                user=self.mariadb_config["user"],
-                password=self.mariadb_config["password"],
-                db=self.mariadb_config["db"],
-                minsize=5,
-                maxsize=20,
-                pool_recycle=3600,  # Recycle connections every hour
+        if not SQLITE_AVAILABLE:
+            raise ImportError(
+                "langgraph-checkpoint-sqlite is not installed. "
+                "Please install it with: uv add langgraph-checkpoint-sqlite"
             )
 
-            # Create MySQL saver
-            self._saver = MySQLSaver(self._mysql_pool)
-            print("✅ MariaDB checkpointer initialized successfully")
-
-        except Exception as e:
-            print(f"❌ Failed to initialize MariaDB checkpointer: {e}")
-            print("   Falling back to in-memory checkpointer")
-            self._use_mysql = False
-            self._saver = MemorySaver()
+        # Use from_conn_string with file path (not URI format)
+        # from_conn_string expects a plain file path string
+        self._saver_cm = SqliteSaver.from_conn_string(str(self.db_path))
+        self._saver = self._saver_cm.__enter__()
+        self._use_sqlite = True
+        print(f"💾 Using SQLite checkpointer for persistent storage at {self.db_path.absolute()}")
 
     @property
     def saver(self):
         """Get the underlying saver for LangGraph integration.
 
         Returns:
-            MySQLSaver if MariaDB available, MemorySaver otherwise
+            SqliteSaver if SQLite available, MemorySaver otherwise
         """
-        if self._use_mysql and self._saver is None:
-            raise RuntimeError(
-                "MariaDB checkpointer not initialized. Call await checkpointer.initialize() first."
-            )
         return self._saver
 
-    async def close(self) -> None:
+    def close(self) -> None:
         """Close the checkpointer and cleanup resources."""
-        if self._mysql_pool is not None:
-            self._mysql_pool.close()
-            await self._mysql_pool.wait_closed()
-            print("🔒 MariaDB connection pool closed")
+        if self._saver_cm is not None:
+            try:
+                self._saver_cm.__exit__(None, None, None)
+                print("🔒 SQLite connection closed")
+            except Exception as e:
+                print(f"⚠️  Error closing SQLite connection: {e}")
 
     def save_state(
         self,
@@ -178,7 +136,7 @@ class WorkflowCheckpointer:
             List of task summaries
         """
         tasks = []
-        tasks_dir = self.db_path.parent / "tasks"
+        tasks_dir = self.json_path.parent / "tasks"
 
         if not tasks_dir.exists():
             return []
@@ -218,7 +176,7 @@ class WorkflowCheckpointer:
         Returns:
             True if deleted, False if not found
         """
-        task_file = self.db_path.parent / "tasks" / f"{task_id}.json"
+        task_file = self.json_path.parent / "tasks" / f"{task_id}.json"
         if task_file.exists():
             task_file.unlink()
             return True
@@ -226,7 +184,7 @@ class WorkflowCheckpointer:
 
     def _save_to_json(self, task_id: str, state: WorkflowState) -> None:
         """Save state to JSON file for quick access."""
-        tasks_dir = self.db_path.parent / "tasks"
+        tasks_dir = self.json_path.parent / "tasks"
         tasks_dir.mkdir(parents=True, exist_ok=True)
 
         task_file = tasks_dir / f"{task_id}.json"
@@ -235,7 +193,7 @@ class WorkflowCheckpointer:
 
     def _load_from_json(self, task_id: str) -> Optional[WorkflowState]:
         """Load state from JSON file."""
-        task_file = self.db_path.parent / "tasks" / f"{task_id}.json"
+        task_file = self.json_path.parent / "tasks" / f"{task_id}.json"
 
         if not task_file.exists():
             return None
@@ -253,37 +211,22 @@ _checkpointer: Optional[WorkflowCheckpointer] = None
 
 
 def get_checkpointer(
-    mariadb_host: str | None = None,
-    mariadb_port: int | None = None,
-    mariadb_user: str | None = None,
-    mariadb_password: str | None = None,
-    mariadb_db: str | None = None,
+    db_path: str | None = None,
+    json_path: str | None = None,
 ) -> WorkflowCheckpointer:
-    """Get or create global checkpointer instance with MariaDB configuration.
+    """Get or create global checkpointer instance with SQLite configuration.
 
     Args:
-        mariadb_host: MariaDB host (overrides config)
-        mariadb_port: MariaDB port (overrides config)
-        mariadb_user: MariaDB user (overrides config)
-        mariadb_password: MariaDB password (overrides config)
-        mariadb_db: MariaDB database name (overrides config)
+        db_path: Path for SQLite database (overrides default)
+        json_path: Path for JSON file storage (overrides default)
 
     Returns:
         WorkflowCheckpointer instance
     """
     global _checkpointer
     if _checkpointer is None:
-        # Import here to avoid circular dependency
-        from app.core.config import get_settings
-
-        settings = get_settings()
-
         _checkpointer = WorkflowCheckpointer(
-            db_path="data/workflows/workflow_state.db",
-            mariadb_host=mariadb_host or settings.mariadb_host,
-            mariadb_port=mariadb_port or settings.mariadb_port,
-            mariadb_user=mariadb_user or settings.mariadb_user,
-            mariadb_password=mariadb_password or settings.mariadb_password,
-            mariadb_db=mariadb_db or settings.mariadb_db,
+            db_path=db_path or "data/workflows/checkpoints.db",
+            json_path=json_path or "data/workflows/workflow_state.db",
         )
     return _checkpointer

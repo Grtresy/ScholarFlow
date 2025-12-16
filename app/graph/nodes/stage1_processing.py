@@ -5,7 +5,7 @@ from typing import Any, Dict, Literal
 
 from app.graph.state import TaskStatus, WorkflowState
 from app.services.llm.provider import LLMClient
-from app.services.prompt_manager import get_prompt_manager
+from app.services.llm.prompts.prompt_templates import STAGE1_PROMPT
 
 
 async def node_stage1_process(state: WorkflowState) -> Dict[str, Any]:
@@ -44,9 +44,8 @@ async def node_stage1_process(state: WorkflowState) -> Dict[str, Any]:
     chunk_text = chunk.get("text", "")
 
     try:
-        # Get prompt manager and format prompt
-        prompt_manager = get_prompt_manager()
-        prompt = prompt_manager.format_stage1_prompt(style=style, chunk_text=chunk_text)
+        # Format prompt with style and content
+        prompt = STAGE1_PROMPT.format(style=style.capitalize(), content=chunk_text)
 
         # Call LLM asynchronously
         client = LLMClient()

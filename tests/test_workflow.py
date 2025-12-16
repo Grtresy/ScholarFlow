@@ -48,31 +48,27 @@ class TestStage1Processing:
             }
             mock_client_class.return_value = mock_client
 
-            # Also mock the prompt manager
-            with patch('app.graph.nodes.stage1_processing.get_prompt_manager') as mock_prompt_mgr:
-                mock_prompt_mgr.return_value.format_stage1_prompt.return_value = "Mocked prompt"
+            state = {
+                "chunks": [
+                    {"id": 1, "title": "Test Chunk", "text": "Test content"},
+                ],
+                "current_chunk_index": 0,
+                "stage1_results": [],
+                "presentation_style": "academic",
+                "execution_log": [],
+            }
 
-                state = {
-                    "chunks": [
-                        {"id": 1, "title": "Test Chunk", "text": "Test content"},
-                    ],
-                    "current_chunk_index": 0,
-                    "stage1_results": [],
-                    "presentation_style": "academic",
-                    "execution_log": [],
-                }
+            result = await node_stage1_process(state)
 
-                result = await node_stage1_process(state)
+            assert result["current_chunk_index"] == 1
+            assert result["stage1_completed"] == 1
+            assert len(result["stage1_results"]) == 1
+            assert result["stage1_results"][0]["chunk_id"] == 1
+            assert result["stage1_results"][0]["success"] is True
+            assert result["stage1_results"][0]["outline"] == "# Test Outline"
 
-                assert result["current_chunk_index"] == 1
-                assert result["stage1_completed"] == 1
-                assert len(result["stage1_results"]) == 1
-                assert result["stage1_results"][0]["chunk_id"] == 1
-                assert result["stage1_results"][0]["success"] is True
-                assert result["stage1_results"][0]["outline"] == "# Test Outline"
-
-                # Verify the LLM was called
-                mock_client.acomplete.assert_called_once()
+            # Verify the LLM was called
+            mock_client.acomplete.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_stage1_process_chunk_failure(self):
@@ -83,30 +79,27 @@ class TestStage1Processing:
             mock_client.acomplete.side_effect = RuntimeError("API Error")
             mock_client_class.return_value = mock_client
 
-            with patch('app.graph.nodes.stage1_processing.get_prompt_manager') as mock_prompt_mgr:
-                mock_prompt_mgr.return_value.format_stage1_prompt.return_value = "Mocked prompt"
+            state = {
+                "chunks": [
+                    {"id": 1, "title": "Test Chunk", "text": "Test content"},
+                ],
+                "current_chunk_index": 0,
+                "stage1_results": [],
+                "presentation_style": "academic",
+                "execution_log": [],
+            }
 
-                state = {
-                    "chunks": [
-                        {"id": 1, "title": "Test Chunk", "text": "Test content"},
-                    ],
-                    "current_chunk_index": 0,
-                    "stage1_results": [],
-                    "presentation_style": "academic",
-                    "execution_log": [],
-                }
+            result = await node_stage1_process(state)
 
-                result = await node_stage1_process(state)
+            assert result["current_chunk_index"] == 1
+            assert result["stage1_completed"] == 1
+            assert len(result["stage1_results"]) == 1
+            assert result["stage1_results"][0]["success"] is False
+            assert "API Error" in result["stage1_results"][0]["error"]
+            assert 1 in result["stage1_failed"]
 
-                assert result["current_chunk_index"] == 1
-                assert result["stage1_completed"] == 1
-                assert len(result["stage1_results"]) == 1
-                assert result["stage1_results"][0]["success"] is False
-                assert "API Error" in result["stage1_results"][0]["error"]
-                assert 1 in result["stage1_failed"]
-
-                # Verify the LLM was called
-                mock_client.acomplete.assert_called_once()
+            # Verify the LLM was called
+            mock_client.acomplete.assert_called_once()
 
     def test_should_continue_stage1_continue(self):
         """Test should_continue_stage1 returns continue."""

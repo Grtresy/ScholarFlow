@@ -4,221 +4,455 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**ScholarFlow** is an intelligent academic literature presentation generator that transforms PDF papers into professional presentation slides. The system uses a three-stage pipeline:
+**ScholarFlow** is an intelligent academic literature presentation generator using a LangGraph-based workflow. The system transforms PDF papers into professional presentation slides through a multi-stage pipeline with human-in-the-loop review capabilities.
 
-1. **Parse**: MinerU extracts structured content (Markdown + images) from PDF papers
-2. **LLM Processing**: DeepSeek processes content, splits it into chunks, generates outlines
-3. **Render**: Marp converts Markdown to presentation formats (PPTX/PDF/HTML)
+## Architecture
 
-The project supports three presentation styles: Academic, Popular Science, and Business Pitch.
+### Core Technology Stack
+- **Backend**: Python 3.12+ with LangGraph for workflow orchestration
+- **LLM**: OpenAI-compatible API (DeepSeek, Kimi, etc.)
+- **PDF Parsing**: MinerU (Magic-PDF) for extracting structured content
+- **Rendering**: Marp CLI (via npm) for generating presentations
+- **Frontend**: React + TypeScript with LangGraph JS SDK
+- **State Persistence**: SQLite-backed checkpointer for workflow resumability
+- **Package Manager**: uv for Python dependencies
 
-## Development Setup
+### LangGraph Workflow Pipeline
 
-### Prerequisites
-- Python 3.12+
-- [uv](https://docs.astral.sh/uv/) package manager
-- Marp CLI (`npm install -g @marp-team/marp-cli`)
-- Docker (for MinerU service)
+The system uses a **StateGraph** workflow defined in `app/graph/workflow.py:59`. The workflow consists of these sequential nodes:
 
-### Installation
+1. **initialize** → Validates inputs and creates task state
+2. **parse_pdf** → Extracts Markdown and images from PDF via MinerU
+3. **split_markdown** → Chunks text for LLM processing
+4. **stage1_process** → Generates slide outlines per chunk (with loop for parallel processing)
+5. **merge_outlines** → Combines chunk outlines into unified structure
+6. **human_review** → Pauses for user approval (optional)
+7. **process_feedback** → Handles user edits and routing decisions
+8. **stage2_process** → Converts approved outline to Marp Markdown
+9. **render** → Generates final presentation file (PPTX/PDF/HTML)
+10. **handle_error** → Error recovery and retry logic
+
+**Key Workflow Features**:
+- State is defined by `WorkflowState` TypedDict in `app/graph/state.py:64`
+- Conditional edges route based on status (TaskStatus enum: app/graph/state.py:10)
+- Checkpointer enables pause/resume at any node
+- Parallel Stage 1 processing with loop-back for multiple chunks
+
+### Directory Structure
+
+```
+ScholarFlow/
+├── app/
+│   ├── graph/              # LangGraph workflow definition
+│   │   ├── workflow.py     # Main graph compilation (app/graph/workflow.py:145)
+│   │   ├── state.py        # State schema & TaskStatus enum
+│   │   └── nodes/          # Individual workflow nodes
+│   ├── services/
+│   │   ├── parser/         # PDF extraction (MinerU client)
+│   │   ├── llm/            # Text splitting, merging, LLM provider
+│   │   │   ├── split.py    # Markdown chunking logic
+│   │   │   ├── merge.py    # Outline merging
+│   │   │   ├── provider.py # LLM API wrapper
+│   │   │   └── prompts/    # Stage 1/2 prompt templates
+│   │   └── renderer/       # Marp rendering
+│   ├── storage/            # State persistence layer
+│   │   ├── checkpointer.py # LangGraph checkpointer implementation
+│   │   ├── local_storage.py # JSON-based storage backend
+│   │   └── interface.py    # Storage abstraction
+│   ├── api/                # FastAPI endpoints
+│   │   ├── endpoints.py    # Workflow API routes
+│   │   ├── upload.py       # PDF upload handler
+│   │   └── main.py         # FastAPI app entry
+│   └── core/
+│       ├── config.py       # Settings from env vars (app/core/config.py:26)
+│       └── logger.py       # Logging configuration
+├── frontend/               # React frontend (separate service)
+├── tests/                  # Test suite
+├── data/                   # Working directories
+│   ├── inputs/            # Uploaded PDFs
+│   ├── intermediate/      # MinerU output (Markdown + images)
+│   ├── outputs/           # Generated presentations
+│   └── workflows/         # Workflow state persistence
+│       ├── checkpoints.db # SQLite database for LangGraph checkpoints
+│       └── tasks/         # JSON snapshots for quick access
+├── langgraph_server.py    # LangGraph server entry point
+└── langgraph.json         # LangGraph deployment config
+```
+
+## Development Commands
+
+### Environment Setup
 ```bash
-# Install dependencies
+# Install dependencies (includes langgraph-checkpoint-sqlite and aiosqlite)
 uv sync
 
-# Set up environment
+# Create .env from template
 cp .env.example .env
-# Edit .env with your API keys and endpoints
-
-# Start MinerU service (optional, for PDF parsing)
-docker-compose up -d mineru
+# Edit .env with API keys (LLM_API_KEY, MINERU_API_KEY, etc.)
 ```
 
-### Environment Variables (.env)
-```
-DEEPSEEK_API_KEY=your_key_here
-DEEPSEEK_BASE_URL=https://api.deepseek.com
-MINERU_ENDPOINT=http://localhost:9000
-OSS_ENDPOINT=http://localhost:9001
-OSS_BUCKET=your-bucket
-```
+**Key Dependencies**:
+- `langgraph>=1.0.4` - Workflow orchestration framework
+- `langgraph-checkpoint-sqlite>=3.0.1` - SQLite-based checkpoint storage
+- `aiosqlite>=0.20.0` - Async SQLite driver
+- `fastapi>=0.100.0` - REST API framework
+- `langchain-openai>=1.1.0` - LLM provider interface
 
-## Common Commands
+### Running Services
 
-### CLI Usage
-Split Markdown into chunks for processing:
+**LangGraph Server** (workflow backend):
 ```bash
-python -m app.main --md-path data/intermediate/paper.md --max-chunks 6000 --target-chunks 6
+# Production mode (uses checkpointer)
+python langgraph_server.py --host 0.0.0.0 --port 8123
+
+# Or via LangGraph CLI
+langgraph dev
+```
+
+**FastAPI Server** (file upload/download):
+```bash
+uvicorn app.api.main:app --host 0.0.0.0 --port 8000 --reload
+```
+
+**Frontend** (React app):
+```bash
+cd frontend
+npm install
+npm run dev  # Runs on port 3000
+```
+
+**Marp CLI** (required for rendering):
+```bash
+npm install -g @marp-team/marp-cli
 ```
 
 ### Testing
+
+Run all tests:
 ```bash
-# Run all tests
 pytest
+# Or use the provided script
+./run_tests.sh
+```
 
-# Run specific test
-pytest tests/test_split.py -v
+Run specific test files:
+```bash
+pytest tests/test_workflow.py -v
+pytest tests/test_async_llm.py -v
+pytest tests/test_storage.py -v
+```
 
-# Run with coverage
+Run with markers:
+```bash
+pytest -m unit           # Only unit tests
+pytest -m integration    # Only integration tests
+pytest -m "not slow"     # Skip slow tests
+```
+
+Run with coverage:
+```bash
 pytest --cov=app --cov-report=html
 ```
 
-### Development
-```bash
-# Install Marp CLI for rendering
-npm install -g @marp-team/marp-cli
+**Test Configuration**: `pyproject.toml:28` defines pytest settings including async mode and markers.
 
-# Render a presentation
-marp presentation.md --output presentation.html
+## Key Implementation Details
 
-# Install new dependencies
-uv add package-name
+### Workflow State Management
 
-# Update dependencies
-uv sync
-```
+**State Schema** (`app/graph/state.py:64`):
+- The `WorkflowState` TypedDict contains 30+ fields tracking all pipeline data
+- Fields include: task metadata, parsing results, chunks, LLM outputs, review data, errors
+- State flows through nodes and is updated via return values
+- Checkpointer persists state to SQLite database at `data/workflows/checkpoints.db`
+- Additional JSON snapshots are stored in `data/workflows/tasks/{task_id}.json` for quick access
 
-## Code Architecture
-
-### Directory Structure
-```
-ScholarFlow/
-├── app/                    # Core application
-│   ├── core/              # Infrastructure (config, logging)
-│   │   ├── config.py      # Environment settings (app/core/config.py:12)
-│   │   └── logger.py      # Logging configuration
-│   ├── api/               # FastAPI endpoints (placeholder)
-│   │   ├── endpoints.py   # API routes
-│   │   └── models.py      # Data models
-│   ├── main.py           # CLI entry point
-│   └── services/         # Business logic
-│       ├── parser/       # PDF parsing
-│       │   ├── mineru_client.py    # MinerU integration (app/services/parser/mineru_client.py:8)
-│       │   └── oss_uploader.py     # Image upload
-│       ├── llm/          # LLM processing
-│       │   ├── text_splitter.py    # Core splitting logic (app/services/llm/text_splitter.py:7)
-│       │   ├── outline_merger.py   # Chunk merging
-│       │   ├── provider.py         # DeepSeek/OpenAI wrapper
-│       │   └── prompts/           # Prompt templates
-│       │       ├── prompt_templates.py
-│       │       └── Prompt 模板清单.md  # Stage 1 & 2 prompts
-│       └── renderer/     # Presentation rendering
-│           ├── marp_engine.py      # Marp CLI wrapper (app/services/renderer/marp_engine.py:9)
-│           └── styles/            # CSS themes
-├── data/                 # Data directories
-│   ├── inputs/          # Uploaded PDFs
-│   ├── intermediate/    # MinerU output (Markdown + images)
-│   └── outputs/         # Final presentations
-├── tests/               # Unit tests
-│   └── test_split.py    # Splitter tests
-└── docker-compose.yml   # MinerU service
-```
-
-### Core Components
-
-**1. Text Splitter** (`app/services/llm/text_splitter.py:7`)
-- Splits Markdown into manageable chunks (default 6000 chars)
-- Preserves section hierarchy with titles
-- Merges chunks to target count for LLM processing
-- Entry point: `main()` function (app/services/llm/text_splitter.py:157)
-
-**2. MinerU Client** (`app/services/parser/mineru_client.py:8`)
-- Placeholder for PDF to Markdown conversion
-- Returns: (markdown_text, image_paths)
-- Currently raises NotImplementedError - needs integration
-
-**3. Marp Engine** (`app/services/renderer/marp_engine.py:9`)
-- Wraps Marp CLI for rendering
-- Command: `marp input.md --output output_path [--theme theme.css]`
-- Supports custom CSS themes
-
-**4. Configuration** (`app/core/config.py:12`)
-- Settings dataclass loads from environment variables
-- Cached with `@lru_cache` for performance
-
-### Key Workflows
-
-**CLI Workflow** (app/main.py:1):
+**Creating Initial State**:
 ```python
-# Split markdown into chunks
-python -m app.main --md-path file.md --max-chars 6000 --target-chunks 6
+from app.graph.state import create_initial_state, PresentationStyle
+
+state = create_initial_state(
+    task_id="unique-id",
+    pdf_path="/path/to/paper.pdf",
+    presentation_style=PresentationStyle.ACADEMIC.value,
+    max_chars=6000,
+    target_chunks=6,
+)
 ```
 
-**Service Integration**:
-```
-PDF → MinerU → Markdown + Images → Text Splitter → Chunks → LLM → Outline → Marp → Presentation
+### Running the Workflow
+
+**Async execution** (recommended):
+```python
+from app.graph.workflow import run_workflow
+
+final_state = await run_workflow(
+    initial_state=state,
+    thread_id="my-thread-123"  # Optional, defaults to task_id
+)
 ```
 
-**Prompt System** (app/services/llm/prompts/Prompt 模板清单.md):
-- Stage 1: Generates slide outlines (3 styles: academic/popular/business)
-- Stage 2: Converts outlines to Marp Markdown
-- Prompts handle chunk拼接 and image references
+**Resuming after human review**:
+```python
+from app.graph.workflow import resume_workflow
 
-## Important Implementation Details
+final_state = await resume_workflow(
+    task_id="my-thread-123",
+    human_feedback={
+        "approved": True,
+        "comments": "Looks good!"
+    }
+)
+```
+
+### LLM Provider Configuration
+
+The system supports any OpenAI-compatible API via `app/services/llm/provider.py`. Configure in `.env`:
+
+```bash
+# Use DeepSeek
+LLM_API_KEY=sk-xxx
+LLM_BASE_URL=https://api.deepseek.com
+LLM_MODEL=deepseek-chat
+
+# Or use Kimi (Paratera endpoint)
+LLM_API_KEY=sk-xxx
+LLM_BASE_URL=https://llmapi.paratera.com/v1
+LLM_MODEL=Kimi-K2
+```
+
+Settings are loaded via `app/core/config.py:53` with fallbacks to OPENAI_* or DEEPSEEK_* env vars.
 
 ### Text Splitting Algorithm
-The splitter (app/services/llm/text_splitter.py:7):
-1. Parses Markdown headers (#, ##) to identify sections
+
+**Implementation**: `app/services/llm/split.py`
+
+The splitter:
+1. Parses Markdown headers (#, ##, ###) to identify sections
 2. Groups content under each header
-3. Breaks sections > max_chars into paragraphs
-4. Merges adjacent chunks if target count is lower
+3. Breaks sections > `max_chars` into paragraphs
+4. Optionally merges chunks to reach `target_chunks` count
 
-### Image Handling
-- MinerU extracts images to cloud storage (OSS/S3)
-- Images referenced by URL in Markdown: `![alt](https://...url)`
-- Prompts preserve image links in slide outlines
+Usage:
+```python
+from app.services.llm.split import split_markdown, merge_chunks
 
-### LLM Integration
-- Uses DeepSeek API (configurable via env vars)
-- LangChain for framework
-- Two-stage processing: outline → Marp conversion
+chunks = split_markdown(markdown_text, max_chars=6000)
+merged = merge_chunks(chunks, target_count=6)
+```
 
-## Development Notes
+### Stage 1/2 Prompts
 
-### Current Status
-- ✅ Text splitting/merging logic implemented
-- ✅ Prompt templates designed
-- ❌ MinerU integration (placeholder only)
-- ❌ LLM provider integration
-- ❌ OSS uploader implementation
-- ❌ Full pipeline integration
-- ❌ API endpoints implementation
+**Location**: `app/services/llm/prompts/prompt_templates.py`
 
-### Testing
-- Only `test_split.py` exists currently
-- Tests splitting behavior with sample Markdown
-- Use `pytest` to run tests
+- **Stage 1**: Generates slide outlines from Markdown chunks (supports 3 styles: academic/popular/business)
+- **Stage 2**: Converts merged outline to Marp Markdown with CSS styling
+- Detailed prompt specifications are in `app/services/llm/prompts/Prompt 模板清单.md`
 
-### Data Flow
-1. Upload PDF to `data/inputs/`
-2. MinerU parses to `data/intermediate/paper.md`
-3. Text splitter creates chunks
-4. LLM processes chunks → outline
-5. Marp renders → `data/outputs/presentation.html`
+Prompts are formatted at runtime with style and content parameters.
 
-### Adding New Features
-- **New LLM provider**: Implement in `app/services/llm/provider.py`
-- **New presentation style**: Add CSS theme to `app/services/renderer/styles/`
-- **New prompt template**: Add to `app/services/llm/prompts/`
-- **API endpoints**: Implement in `app/api/endpoints.py`
+### Checkpointer Implementation
 
-## Dependencies
+**Primary Storage**: SQLite database via `langgraph-checkpoint-sqlite`
+**Secondary Storage**: JSON files in `app/storage/local_storage.py`
+**Checkpointer**: `app/storage/checkpointer.py:get_checkpointer()`
 
-**Core**: FastAPI, uvicorn, pydantic, openai, langchain, langgraph
-**Build**: uv (Python package manager)
-**Rendering**: @marp-team/marp-cli (npm)
-**Services**: MinerU (docker), Object Storage (OSS/S3)
+The checkpointer enables workflow pause/resume by persisting state after each node execution. The system uses a dual-storage approach:
+
+1. **SQLite Database** (`data/workflows/checkpoints.db`): LangGraph's native checkpoint storage for workflow state versioning and resumption
+2. **JSON Files** (`data/workflows/tasks/{task_id}.json`): Quick-access snapshots for task metadata and status queries
+
+**Key Methods**:
+- `save_state(task_id, state, node_name)` - Persist state snapshot to JSON
+- `load_state(task_id)` - Retrieve latest state snapshot from JSON
+- `list_tasks(status, limit)` - List all tasks with optional status filter
+- `delete_task(task_id)` - Delete a task's state
+- `saver` property - Get the underlying LangGraph checkpointer (SqliteSaver)
+
+**Usage**:
+```python
+from app.storage.checkpointer import get_checkpointer
+
+# Get global checkpointer instance
+checkpointer = get_checkpointer()
+
+# Use in workflow compilation
+from app.graph.workflow import create_workflow
+workflow = create_workflow()
+compiled = workflow.compile(checkpointer=checkpointer.saver)
+
+# Close when done (cleanup resources)
+checkpointer.close()
+```
+
+**Note**: The SQLite database file is created automatically on first use. No additional database server setup is required.
+
+### Marp Rendering
+
+**Engine**: `app/services/renderer/marp_engine.py:9`
+
+Wraps Marp CLI to generate presentations from Markdown:
+```python
+from app.services.renderer.marp_engine import render_marp
+
+output_path = render_marp(
+    marp_markdown_path="/path/to/slides.md",
+    output_format="pptx",  # or "pdf", "html"
+    theme_css_path="/path/to/custom.css"  # optional
+)
+```
+
+Custom CSS themes are stored in `app/services/renderer/styles/`.
+
+## Common Development Patterns
+
+### Adding a New Workflow Node
+
+1. Create node file in `app/graph/nodes/my_node.py`:
+```python
+from app.graph.state import WorkflowState, TaskStatus
+
+def node_my_operation(state: WorkflowState) -> WorkflowState:
+    """Process state and return updates."""
+    # Extract needed data
+    data = state.get("some_field")
+
+    # Perform operation
+    result = process(data)
+
+    # Return state updates
+    return {
+        "status": TaskStatus.NEXT_STAGE.value,
+        "result_field": result,
+        "updated_at": datetime.now().isoformat(),
+    }
+```
+
+2. Register in `app/graph/workflow.py:59`:
+```python
+workflow.add_node("my_operation", node_my_operation)
+workflow.add_edge("previous_node", "my_operation")
+```
+
+### Adding New LLM Prompts
+
+1. Update `app/services/llm/prompts/prompt_templates.py` with new template string
+2. Use in workflow node:
+```python
+from app.services.llm.provider import call_model
+from app.services.llm.prompts.prompt_templates import MY_PROMPT
+
+response = await call_model(
+    prompt=MY_PROMPT.format(content=chunk_text, style=style),
+    max_tokens=4000,
+)
+```
+
+### Extending State Schema
+
+1. Add field to `WorkflowState` in `app/graph/state.py:64`:
+```python
+class WorkflowState(TypedDict, total=False):
+    # Existing fields...
+    my_new_field: str  # Add new field
+```
+
+2. Update `create_initial_state()` to initialize the field
+3. Nodes can now read/write this field
+
+## API Integration
+
+### FastAPI Endpoints
+
+**Upload PDF** (`app/api/upload.py`):
+```
+POST /api/upload
+Content-Type: multipart/form-data
+Body: file (PDF)
+Returns: {"filename": "...", "path": "..."}
+```
+
+**Start Workflow** (`app/api/endpoints.py`):
+```
+POST /api/tasks
+Body: {
+  "pdf_path": "/path/to/file.pdf",
+  "presentation_style": "academic",
+  "max_chars": 6000,
+  "target_chunks": 6
+}
+Returns: {"task_id": "...", "status": "pending"}
+```
+
+**Check Status**:
+```
+GET /api/tasks/{task_id}
+Returns: WorkflowState (full state object)
+```
+
+### LangGraph SDK (Frontend)
+
+The React frontend uses LangGraph JS SDK to interact with the workflow server at `localhost:8123`. See `frontend/src/lib/langgraph.ts` for client configuration.
+
+## Environment Variables
+
+Required variables in `.env`:
+
+```bash
+# LLM Configuration (OpenAI-compatible)
+LLM_API_KEY=sk-xxx
+LLM_BASE_URL=https://api.example.com/v1
+LLM_MODEL=model-name
+LLM_MAX_TOKENS=4000
+LLM_TEMPERATURE=0.7
+
+# MinerU Configuration
+MINERU_API_KEY=xxx
+MINERU_ENDPOINT=https://api.opendatalab.org.cn
+
+# Storage
+STORAGE_BACKEND=local  # or 's3'
+DATA_DIR=data          # Working directory
+
+# Server Configuration
+FASTAPI_HOST=0.0.0.0
+FASTAPI_PORT=8000
+LANGGRAPH_HOST=0.0.0.0
+LANGGRAPH_PORT=8123
+
+# LangSmith Tracing (optional)
+LANGSMITH_API_KEY=lsv2_xxx
+LANGCHAIN_TRACING_V2=true
+```
 
 ## Troubleshooting
 
-**MinerU Connection Error**: Ensure docker-compose service is running
-**Missing API Key**: Check `.env` file is properly configured
-**Marp Rendering Fails**: Verify Marp CLI is installed (`marp --version`)
-**Import Errors**: Activate virtual environment (`source .venv/bin/activate`)
+**Workflow not resuming**: Ensure checkpointer is enabled in `compile_workflow(with_checkpointer=True)` and thread_id is consistent. Check that `data/workflows/checkpoints.db` exists and is writable.
 
-## References
+**SQLite database errors**: If you see "unable to open database file", ensure:
+  - The `data/workflows/` directory exists and has write permissions
+  - No other process is locking the database file
+  - Disk space is available
 
-- MinerU: https://github.com/opendatalab/MinerU
-- DeepSeek API: https://platform.deepseek.com/
-- Marp: https://marp.app/
-- Project Structure: See PROJECT_STRUCTURE.md
-- Full Documentation: See README.md
+**MinerU connection error**: Verify MINERU_API_KEY and MINERU_ENDPOINT are correct. Check API quota.
+
+**LLM API errors**: Confirm LLM_API_KEY, LLM_BASE_URL, and LLM_MODEL are properly set. Check rate limits.
+
+**Marp rendering fails**: Ensure `@marp-team/marp-cli` is installed globally: `npm install -g @marp-team/marp-cli`
+
+**Import errors**: Activate venv or use `uv run`: `source .venv/bin/activate` or `uv run python script.py`
+
+**Test failures**: Run `pytest -v` to see detailed errors. Check async tests use `pytest-asyncio` markers.
+
+**Missing checkpoint dependencies**: If you see ImportError for langgraph-checkpoint-sqlite, run: `uv add langgraph-checkpoint-sqlite aiosqlite`
+
+## Important Notes
+
+- The workflow is **asynchronous** by design. Use `await` with all workflow operations.
+- **State persistence** is critical for human-in-the-loop. Always use consistent `thread_id`.
+- **SQLite checkpointer** is used for reliable state persistence. The database file (`data/workflows/checkpoints.db`) is created automatically and should be included in backups for production deployments.
+- **Dual storage**: LangGraph uses SQLite for checkpoint versioning, while JSON files provide quick task metadata access without database queries.
+- **Error handling** is centralized in the `handle_error` node with retry logic.
+- **Parallel processing** in Stage 1 is managed via loop-back edges, not multi-threading.
+- The system supports **three presentation styles** (academic/popular/business) defined in `app/graph/state.py:26`.
+- **Image references** from MinerU are preserved as URLs throughout the pipeline.
