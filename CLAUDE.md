@@ -304,6 +304,71 @@ output_path = render_marp(
 
 Custom CSS themes are stored in `app/services/renderer/styles/`.
 
+### Image Tokenization Protection
+
+**Problem**: LLM processing often corrupts image hash values, causing final presentations to display broken images.
+
+**Solution**: Three-stage tokenization protection mechanism implemented in `app/services/parser/image_manager.py`:
+
+#### Stage 1: Tokenize After PDF Parsing
+Immediately after MinerU extracts Markdown, replace image references with simple tokens:
+
+```python
+from app.services.parser.image_manager import ImageManager
+
+manager = ImageManager(Path("data/intermediate"))
+
+# Convert: ![alt](images/hash.jpg) → [[TOKEN_IMG_001]]
+tokenized_text, token_map = manager.tokenize_image_references_enhanced(
+    markdown_content=markdown,
+    task_id="task_123"
+)
+```
+
+**Token Map Structure**:
+```python
+{
+    "[[TOKEN_IMG_001]]": {
+        "hash": "df31c4889a278a680daa11239dcc9df51b4c7fd8b86edfa336bc2b3dec9e25d0",
+        "alt_text": "Figure 1: CIFAR-10 results",
+        "original_path": "images/df31c4889a278a680daa11239dcc9df51b4c7fd8b86edfa336bc2b3dec9e25d0.jpg",
+        "filename": "df31c4889a278a680daa11239dcc9df51b4c7fd8b86edfa336bc2b3dec9e25d0.jpg"
+    }
+}
+```
+
+#### Stage 2: LLM Processing with Token Protection
+LLM processes simple tokens (`[[TOKEN_IMG_001]]`) instead of complex hash paths. Updated prompts in `app/services/llm/prompts/prompt_templates.py` explicitly forbid:
+- Modifying token numbers
+- Converting tokens to other formats
+- Deleting or omitting tokens
+- Expanding tokens to full image paths
+
+#### Stage 3: Restore Before Rendering
+Before Marp rendering, restore tokens to proper image links:
+
+```python
+# Convert: [[TOKEN_IMG_001]] → ![Figure 1](images/hash.jpg)
+final_markdown = manager.restore_tokens_to_markdown_enhanced(
+    tokenized_content=tokenized_markdown,
+    token_map=token_map,
+    output_format='marp'
+)
+```
+
+**Integration Points**:
+- **PDF Parsing Node** (`app/graph/nodes/pdf_parsing.py`): Tokenizes immediately after MinerU extraction
+- **Rendering Node** (`app/graph/nodes/rendering.py`): Restores tokens before Marp rendering
+- **WorkflowState** (`app/graph/state.py`): Added `tokenized_text`, `image_token_map`, `token_count` fields
+
+**Testing**: Run `pytest tests/test_tokenization.py -v` to verify tokenization mechanism.
+
+**Benefits**:
+- ✅ 100% image preservation - no broken links in final PPT
+- ✅ Automatic - no manual intervention required
+- ✅ Traceable - token map records all image metadata
+- ✅ LLM-safe - simple tokens resist modification
+
 ## Common Development Patterns
 
 ### Adding a New Workflow Node

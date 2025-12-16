@@ -6,6 +6,7 @@ from typing import Any, Dict
 
 from app.graph.state import TaskStatus, WorkflowState
 from app.services.parser.mineru_client import MinerUClient
+from app.services.parser.image_manager import ImageManager
 
 
 def node_parse_pdf(state: WorkflowState) -> Dict[str, Any]:
@@ -43,6 +44,18 @@ def node_parse_pdf(state: WorkflowState) -> Dict[str, Any]:
         # Read markdown content
         markdown_text = markdown_path.read_text(encoding="utf-8")
 
+        # Initialize ImageManager for tokenization
+        image_manager = ImageManager(Path("data/intermediate"))
+        task_dir = image_manager.create_task_dir(task_id)
+
+        # Tokenize image references to protect hashes during LLM processing
+        tokenized_text, image_token_map = image_manager.tokenize_image_references_enhanced(
+            markdown_content=markdown_text,
+            task_id=task_id
+        )
+
+        token_count = len(image_token_map)
+
         # Convert paths to strings
         image_path_strs = [str(p) for p in image_paths]
 
@@ -63,7 +76,11 @@ def node_parse_pdf(state: WorkflowState) -> Dict[str, Any]:
             "markdown_path": str(markdown_path),
             "image_paths": image_path_strs,
             "parse_metadata": metadata,
-            "current_step": f"PDF解析完成，共 {len(markdown_text)} 字符",
+            # Token management
+            "tokenized_text": tokenized_text,
+            "image_token_map": image_token_map,
+            "token_count": token_count,
+            "current_step": f"PDF解析完成，共 {len(markdown_text)} 字符，{token_count} 张图片已Token化",
             "progress_percentage": 15.0,
             "updated_at": datetime.now().isoformat(),
             "execution_log": execution_log,

@@ -87,6 +87,11 @@ class WorkflowState(TypedDict, total=False):
     image_paths: List[str]
     parse_metadata: Dict[str, Any]
 
+    # ===== Image Token Management =====
+    tokenized_text: str  # Markdown with tokens instead of image paths
+    image_token_map: Dict[str, Dict[str, str]]  # Token to image info mapping
+    token_count: int  # Number of tokens found
+
     # ===== Stage 2: Text splitting =====
     chunks: List[ChunkData]
     chunks_count: int
@@ -173,6 +178,10 @@ def create_initial_state(
         markdown_path="",
         image_paths=[],
         parse_metadata={},
+        # Image Token Management
+        tokenized_text="",
+        image_token_map={},
+        token_count=0,
         # Stage 2: Text splitting
         chunks=[],
         chunks_count=0,

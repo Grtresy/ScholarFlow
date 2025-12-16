@@ -21,7 +21,8 @@ def node_split_markdown(state: WorkflowState) -> Dict[str, Any]:
     Returns:
         State updates with chunks and chunks_count
     """
-    markdown_text = state.get("markdown_text", "")
+    # Use tokenized_text to preserve image tokens during splitting
+    markdown_text = state.get("tokenized_text", state.get("markdown_text", ""))
     max_chars = state.get("max_chars", 6000)
     target_chunks = state.get("target_chunks", 6)
 

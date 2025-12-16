@@ -6,6 +6,7 @@ from typing import Any, Dict
 
 from app.graph.state import TaskStatus, WorkflowState
 from app.services.renderer.marp_engine import MarpEngine
+from app.services.parser.image_manager import ImageManager
 
 
 def node_render(state: WorkflowState) -> Dict[str, Any]:
@@ -27,6 +28,28 @@ def node_render(state: WorkflowState) -> Dict[str, Any]:
     output_format = state.get("output_format", "pptx")
     task_id = state.get("task_id", "unknown")
 
+    # Get token map for restoration
+    image_token_map = state.get("image_token_map", {})
+
+    # Fallback: try to load token map from file if not in state
+    if not image_token_map and task_id:
+        import json
+        import warnings
+        warnings.warn(
+            f"⚠️ image_token_map not found in state for task {task_id}. "
+            "This indicates a state flow issue. Loaded from file as fallback.",
+            UserWarning,
+            stacklevel=2
+        )
+        token_map_path = Path("data/intermediate") / task_id / "token_map.json"
+        if token_map_path.exists():
+            try:
+                with open(token_map_path, 'r', encoding='utf-8') as f:
+                    image_token_map = json.load(f)
+                print(f"📋 Loaded token map from file: {len(image_token_map)} tokens")
+            except Exception as e:
+                print(f"⚠️ Failed to load token map: {e}")
+
     if not marp_markdown and not marp_markdown_path:
         return {
             "status": TaskStatus.FAILED.value,
@@ -35,9 +58,20 @@ def node_render(state: WorkflowState) -> Dict[str, Any]:
         }
 
     try:
-        # Ensure markdown file exists
+        # Restore tokens to proper image links before rendering
+        if image_token_map:
+            image_manager = ImageManager(Path("data/intermediate"))
+            marp_markdown = image_manager.restore_tokens_to_markdown_enhanced(
+                tokenized_content=marp_markdown,
+                token_map=image_token_map,
+                output_format='marp'
+            )
+
+        # Ensure markdown file exists and contains restored tokens
         if marp_markdown_path:
             input_md = Path(marp_markdown_path)
+            # Write restored content back to the file
+            input_md.write_text(marp_markdown, encoding="utf-8")
         else:
             # Save markdown to file first
             output_dir = Path("data/intermediate") / task_id

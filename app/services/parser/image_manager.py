@@ -1,12 +1,13 @@
 """Local image storage and management."""
 from __future__ import annotations
 
+import json
 import re
 import shutil
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, asdict
 from pathlib import Path
-from typing import Dict, Iterable, List, Tuple
+from typing import Dict, Iterable, List, Tuple, Optional
 
 
 @dataclass
@@ -247,7 +248,168 @@ class ImageManager:
 
         return info
 
-    # Token-based image handling methods
+    # Enhanced Token-based image handling with hash preservation
+
+    IMAGE_TOKEN_PATTERN = re.compile(r'\[\[IMAGE:([^\]]+)\]\]')
+    TOKEN_IMG_PATTERN = re.compile(r'\[\[TOKEN_IMG_(\d+)\]\]')
+
+    def tokenize_image_references_enhanced(
+        self,
+        markdown_content: str,
+        task_id: str
+    ) -> Tuple[str, Dict[str, Dict[str, str]]]:
+        """
+        Replace image references with numbered tokens while preserving hash information.
+
+        Args:
+            markdown_content: Markdown content with image references
+            task_id: Task identifier for logging
+
+        Returns:
+            Tuple of (tokenized_content, token_mapping)
+            token_mapping format: {
+                '[[TOKEN_IMG_001]]': {
+                    'hash': 'df31c4889a278a680daa11239dcc9df51b4c7fd8b86edfa336bc2b3dec9e25d0',
+                    'alt_text': 'Figure 1',
+                    'original_path': 'images/df31c4889a278a680daa11239dcc9df51b4c7fd8b86edfa336bc2b3dec9e25d0.jpg'
+                }
+            }
+        """
+        token_map = {}
+        image_counter = 1
+
+        # Pattern to match all image references
+        pattern = r'!\[([^\]]*)\]\(([^)]+)\)'
+
+        def replace_with_token(match):
+            nonlocal image_counter
+            alt_text = match.group(1)
+            image_path = match.group(2)
+
+            # Generate token
+            token = f"[[TOKEN_IMG_{image_counter:03d}]]"
+
+            # Extract hash from path
+            filename = image_path.split('/')[-1]
+            hash_part = filename.split('.')[0] if '.' in filename else filename
+
+            # Record mapping
+            token_map[token] = {
+                'hash': hash_part,
+                'alt_text': alt_text,
+                'original_path': image_path,
+                'filename': filename
+            }
+
+            image_counter += 1
+            return token
+
+        # Execute replacement
+        tokenized = re.sub(pattern, replace_with_token, markdown_content)
+
+        # Save token map to file for debugging
+        token_map_path = Path(self.base_dir) / task_id / "token_map.json"
+        token_map_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(token_map_path, 'w', encoding='utf-8') as f:
+            json.dump(token_map, f, indent=2, ensure_ascii=False)
+
+        return tokenized, token_map
+
+    def restore_tokens_to_markdown_enhanced(
+        self,
+        tokenized_content: str,
+        token_map: Dict[str, Dict[str, str]],
+        output_format: str = 'marp'
+    ) -> str:
+        """
+        Restore numbered tokens to proper markdown image format.
+
+        Args:
+            tokenized_content: Content with [[TOKEN_IMG_XXX]] tokens
+            token_map: Mapping from tokens to image information
+            output_format: Output format ('marp', 'html', 'raw')
+
+        Returns:
+            Markdown content with restored image links
+        """
+        def replace_token_with_image(match):
+            token_num = match.group(1)  # e.g., '001' or '3'
+            # Ensure 3-digit format to match token_map keys
+            token = f"[[TOKEN_IMG_{int(token_num):03d}]]"
+
+            if token in token_map:
+                mapping = token_map[token]
+                hash_value = mapping['hash']
+                alt_text = mapping['alt_text']
+
+                if output_format == 'marp':
+                    # Marp format: images/ prefix
+                    return f'![{alt_text}](images/{hash_value}.jpg)'
+                elif output_format == 'html':
+                    # HTML format: full path
+                    return f'<img src="images/{hash_value}.jpg" alt="{alt_text}" />'
+                else:
+                    # Raw format for debugging
+                    return f'[[{token}]]'
+            else:
+                # Token not found, keep as is but log warning
+                return f'[[{token}]]'
+
+        # Pattern: [[TOKEN_IMG_XXX]]
+        pattern = r'\[\[TOKEN_IMG_(\d+)\]\]'
+        restored = re.sub(pattern, replace_token_with_image, tokenized_content)
+
+        return restored
+
+    def validate_token_integrity(
+        self,
+        tokenized_content: str,
+        expected_token_count: int
+    ) -> Dict[str, any]:
+        """
+        Validate that tokens haven't been corrupted during LLM processing.
+
+        Args:
+            tokenized_content: Content that should contain tokens
+            expected_token_count: Expected number of tokens
+
+        Returns:
+            Validation report
+        """
+        # Count tokens
+        actual_tokens = self.TOKEN_IMG_PATTERN.findall(tokenized_content)
+        actual_count = len(actual_tokens)
+
+        # Check for duplicates or missing
+        unique_tokens = set(actual_tokens)
+        duplicate_count = actual_count - len(unique_tokens)
+
+        # Check if tokens are properly formatted (sequential numbers)
+        try:
+            token_numbers = sorted(int(t) for t in actual_tokens)
+            is_sequential = all(
+                token_numbers[i] + 1 == token_numbers[i + 1]
+                for i in range(len(token_numbers) - 1)
+            )
+        except ValueError:
+            is_sequential = False
+
+        report = {
+            'expected_count': expected_token_count,
+            'actual_count': actual_count,
+            'is_valid': actual_count == expected_token_count and duplicate_count == 0,
+            'duplicate_count': duplicate_count,
+            'is_sequential': is_sequential,
+            'missing_count': max(0, expected_token_count - actual_count),
+            'extra_count': max(0, actual_count - expected_token_count),
+        }
+
+        if not report['is_valid']:
+            print(f"⚠️  Token validation failed: {report}")
+
+        return report
+
+    # Legacy token-based image handling methods
 
     IMAGE_TOKEN_PATTERN = re.compile(r'\[\[IMAGE:([^\]]+)\]\]')
 
