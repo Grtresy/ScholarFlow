@@ -1,4 +1,4 @@
-"""Stage 2 processing node for workflow."""
+"""Stage 2 processing node for workflow (async version)."""
 
 from datetime import datetime
 from pathlib import Path
@@ -9,12 +9,12 @@ from app.services.llm.provider import LLMClient
 from app.services.prompt_manager import get_prompt_manager
 
 
-def node_stage2_process(state: WorkflowState) -> Dict[str, Any]:
-    """Process merged outline with Stage 2 LLM call.
+async def node_stage2_process(state: WorkflowState) -> Dict[str, Any]:
+    """Process merged outline with Stage 2 LLM call (async).
 
     This node:
     - Takes the merged outline
-    - Calls LLM with Stage 2 prompt to generate Marp Markdown
+    - Calls LLM with Stage 2 prompt to generate Marp Markdown asynchronously
     - Saves the result
 
     Args:
@@ -39,9 +39,9 @@ def node_stage2_process(state: WorkflowState) -> Dict[str, Any]:
         prompt_manager = get_prompt_manager()
         prompt = prompt_manager.format_stage2_prompt(style=style, outline=merged_outline)
 
-        # Call LLM
+        # Call LLM asynchronously
         client = LLMClient()
-        response = client.complete(
+        response = await client.acomplete(
             prompt=prompt,
             max_tokens=8000,
             temperature=0.7,

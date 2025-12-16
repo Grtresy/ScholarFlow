@@ -1,29 +1,39 @@
-"""Unified LLM provider wrapper for any OpenAI-compatible API.
+"""Unified LLM provider wrapper using LangChain for async operations.
 
-This module provides a single interface for calling various LLM APIs including:
+This module provides both synchronous and asynchronous interfaces using LangChain:
 - OpenAI (api.openai.com)
 - DeepSeek (api.deepseek.com)
 - Azure OpenAI
 - Custom OpenAI-compatible endpoints
 - Local models (via OpenAI-compatible gateways)
 
+LangChain provides:
+- Native async support (acall, abatch)
+- Connection pooling and HTTP/2
+- Built-in retry and error handling
+- Streaming support
+- Better integration with LangGraph
+
 All configuration is done via environment variables for flexibility.
 """
 from __future__ import annotations
 
-import json
-from typing import Any, Dict, Generator, List, Optional
+import asyncio
+from typing import Any, Dict, List, Optional, AsyncGenerator
 
-import requests
+from langchain_openai import ChatOpenAI
+from langchain_core.messages import HumanMessage
 
 from app.core.config import get_settings
 
 
 class LLMClient:
-    """Universal OpenAI-compatible LLM client.
+    """Universal OpenAI-compatible LLM client using LangChain.
 
     This client works with any API that follows the OpenAI chat completions format.
     Simply set the appropriate environment variables to switch between providers.
+
+    Provides both sync and async interfaces via LangChain.
     """
 
     def __init__(
@@ -33,8 +43,9 @@ class LLMClient:
         model: str | None = None,
         max_tokens: int | None = None,
         temperature: float | None = None,
+        timeout: float = 300.0,
     ):
-        """Initialize LLM client.
+        """Initialize LLM client using LangChain.
 
         Args:
             api_key: API key. If None, reads from environment (LLM_API_KEY, OPENAI_API_KEY, or DEEPSEEK_API_KEY).
@@ -42,6 +53,7 @@ class LLMClient:
             model: Model name. If None, reads from environment (LLM_MODEL, OPENAI_MODEL, or DEEPSEEK_MODEL).
             max_tokens: Maximum tokens. If None, reads from environment (LLM_MAX_TOKENS, default: 4000).
             temperature: Sampling temperature. If None, reads from environment (LLM_TEMPERATURE, default: 0.7).
+            timeout: Request timeout in seconds (default: 300).
         """
         settings = get_settings()
 
@@ -56,22 +68,30 @@ class LLMClient:
         self.model = model or settings.llm_model or "deepseek-chat"
         self.max_tokens = max_tokens or settings.llm_max_tokens
         self.temperature = temperature or settings.llm_temperature
+        self.timeout = timeout
 
         # Ensure base_url ends with /v1 for OpenAI compatibility
         if not self.base_url.endswith("/v1"):
             self.base_url = self.base_url.rstrip("/") + "/v1"
 
-        self.headers = {
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {self.api_key}"
-        }
+        # Initialize LangChain ChatOpenAI client
+        self._client = ChatOpenAI(
+            api_key=self.api_key,
+            base_url=self.base_url,
+            model=self.model,
+            max_tokens=self.max_tokens,
+            temperature=self.temperature,
+            request_timeout=self.timeout,
+            max_retries=3,
+        )
 
-        print(f"🤖 LLM Client initialized:")
+        print(f"🤖 LangChain LLM Client initialized:")
         print(f"   Provider: {self._get_provider_name()}")
         print(f"   Base URL: {self.base_url}")
         print(f"   Model: {self.model}")
         print(f"   Max Tokens: {self.max_tokens}")
         print(f"   Temperature: {self.temperature}")
+        print(f"   Timeout: {self.timeout}s")
 
     def _get_provider_name(self) -> str:
         """Get the name of the LLM provider based on the base URL."""
@@ -92,8 +112,8 @@ class LLMClient:
         max_tokens: int | None = None,
         temperature: float | None = None,
         stream: bool = False,
-    ) -> Dict[str, Any] | Generator[str, None, None]:
-        """Complete a prompt using the configured LLM API.
+    ) -> Dict[str, Any]:
+        """Complete a prompt using LangChain (synchronous).
 
         Args:
             prompt: The prompt to send
@@ -103,78 +123,75 @@ class LLMClient:
             stream: Whether to stream response
 
         Returns:
-            Response dict or generator if stream=True
+            Response dict with content and metadata
         """
-        data = {
-            "model": model or self.model,
-            "messages": [
-                {"role": "user", "content": prompt}
-            ],
-            "max_tokens": max_tokens or self.max_tokens,
-            "temperature": temperature or self.temperature,
-            "stream": stream
-        }
-
+        # Note: LangChain's ChatOpenAI doesn't support stream in this interface
+        # Use astream for streaming
         try:
-            response = requests.post(
-                f"{self.base_url}/chat/completions",
-                headers=self.headers,
-                json=data,
-                stream=stream,
-                timeout=300
-            )
+            response = self._client.invoke([HumanMessage(content=prompt)])
 
-            if not stream:
-                return self._handle_response(response)
-            else:
-                return self._handle_stream_response(response)
+            return {
+                "content": response.content,
+                "usage": getattr(response, "usage_metadata", {}),
+                "model": self.model,
+                "finish_reason": "stop"
+            }
 
         except Exception as e:
             raise RuntimeError(f"LLM API call failed: {e}")
 
-    def _handle_response(self, response: requests.Response) -> Dict[str, Any]:
-        """Handle non-streaming response."""
-        if response.status_code != 200:
-            error_msg = f"HTTP {response.status_code}: {response.text}"
-            raise RuntimeError(f"API request failed: {error_msg}")
+    async def acomplete(
+        self,
+        prompt: str,
+        model: str | None = None,
+        max_tokens: int | None = None,
+        temperature: float | None = None,
+    ) -> Dict[str, Any]:
+        """Complete a prompt using LangChain (asynchronous).
 
-        result = response.json()
+        Args:
+            prompt: The prompt to send
+            model: Model name (defaults to configured model)
+            max_tokens: Maximum tokens (defaults to configured max_tokens)
+            temperature: Sampling temperature (defaults to configured temperature)
 
-        if "error" in result:
-            raise RuntimeError(f"API error: {result['error']}")
+        Returns:
+            Response dict with content and metadata
+        """
+        try:
+            response = await self._client.ainvoke([HumanMessage(content=prompt)])
 
-        return {
-            "content": result["choices"][0]["message"]["content"],
-            "usage": result.get("usage", {}),
-            "model": result.get("model", ""),
-            "finish_reason": result["choices"][0].get("finish_reason", "")
-        }
+            return {
+                "content": response.content,
+                "usage": getattr(response, "usage_metadata", {}),
+                "model": self.model,
+                "finish_reason": "stop"
+            }
 
-    def _handle_stream_response(self, response: requests.Response) -> Generator[str, None, None]:
-        """Handle streaming response."""
-        if response.status_code != 200:
-            error_msg = f"HTTP {response.status_code}: {response.text}"
-            raise RuntimeError(f"API request failed: {error_msg}")
+        except Exception as e:
+            raise RuntimeError(f"LLM API call failed: {e}")
 
-        for line in response.iter_lines():
-            if not line:
-                continue
+    async def astream(
+        self,
+        prompt: str,
+    ) -> AsyncGenerator[str, None, None]:
+        """Stream response from LLM using LangChain.
 
-            line = line.decode('utf-8')
-            if line.startswith('data: '):
-                line = line[6:]
+        Args:
+            prompt: The prompt to send
 
-                if line.strip() == '[DONE]':
-                    break
+        Yields:
+            Chunks of response content
+        """
+        try:
+            # LangChain's astream is async, so we need to await it first
+            stream = self._client.astream([HumanMessage(content=prompt)])
+            async for chunk in stream:
+                if hasattr(chunk, 'content') and chunk.content:
+                    yield chunk.content
 
-                try:
-                    data = json.loads(line)
-                    if "choices" in data and len(data["choices"]) > 0:
-                        delta = data["choices"][0].get("delta", {})
-                        if "content" in delta:
-                            yield delta["content"]
-                except json.JSONDecodeError:
-                    continue
+        except Exception as e:
+            raise RuntimeError(f"LLM streaming failed: {e}")
 
     def batch_complete(
         self,
@@ -183,7 +200,7 @@ class LLMClient:
         max_tokens: int | None = None,
         temperature: float | None = None,
     ) -> List[Dict[str, Any]]:
-        """Complete multiple prompts in batch.
+        """Complete multiple prompts in batch (synchronous).
 
         Args:
             prompts: List of prompts to process
@@ -194,23 +211,59 @@ class LLMClient:
         Returns:
             List of response dicts
         """
-        results = []
-        for i, prompt in enumerate(prompts):
-            print(f"Processing prompt {i+1}/{len(prompts)}...")
-            try:
-                result = self.complete(
-                    prompt=prompt,
-                    model=model,
-                    max_tokens=max_tokens,
-                    temperature=temperature,
-                    stream=False
-                )
-                results.append(result)
-            except Exception as e:
-                print(f"Warning: Failed to process prompt {i+1}: {e}")
-                results.append({"error": str(e)})
+        try:
+            # Use LangChain's batch processing
+            messages_list = [[HumanMessage(content=prompt)] for prompt in prompts]
+            responses = self._client.batch(messages_list)
 
-        return results
+            return [
+                {
+                    "content": response.content,
+                    "usage": getattr(response, "usage_metadata", {}),
+                    "model": self.model,
+                    "finish_reason": "stop"
+                }
+                for response in responses
+            ]
+
+        except Exception as e:
+            raise RuntimeError(f"Batch LLM call failed: {e}")
+
+    async def abatch_complete(
+        self,
+        prompts: List[str],
+        model: str | None = None,
+        max_tokens: int | None = None,
+        temperature: float | None = None,
+    ) -> List[Dict[str, Any]]:
+        """Complete multiple prompts in batch (asynchronous, concurrent).
+
+        Args:
+            prompts: List of prompts to process
+            model: Model name (defaults to configured model)
+            max_tokens: Maximum tokens (defaults to configured max_tokens)
+            temperature: Sampling temperature (defaults to configured temperature)
+
+        Returns:
+            List of response dicts
+        """
+        try:
+            # Use LangChain's async batch processing with concurrency
+            messages_list = [[HumanMessage(content=prompt)] for prompt in prompts]
+            responses = await self._client.abatch(messages_list)
+
+            return [
+                {
+                    "content": response.content,
+                    "usage": getattr(response, "usage_metadata", {}),
+                    "model": self.model,
+                    "finish_reason": "stop"
+                }
+                for response in responses
+            ]
+
+        except Exception as e:
+            raise RuntimeError(f"Async batch LLM call failed: {e}")
 
 
 # Convenience functions for easy use
@@ -220,10 +273,10 @@ def call_model(
     max_tokens: int | None = None,
     temperature: float | None = None,
     stream: bool = False,
-) -> Dict[str, Any] | Generator[str, None, None]:
-    """Call the LLM with a prompt and return parsed response.
+) -> Dict[str, Any]:
+    """Call the LLM with a prompt and return parsed response (synchronous).
 
-    This is the main entry point for LLM calls.
+    This is the main entry point for synchronous LLM calls.
     Uses the configured provider from environment variables.
 
     Args:
@@ -231,10 +284,10 @@ def call_model(
         model: Model name (optional, uses default from config)
         max_tokens: Max tokens (optional, uses default from config)
         temperature: Temperature (optional, uses default from config)
-        stream: Whether to stream response
+        stream: Whether to stream response (note: use astream for async streaming)
 
     Returns:
-        Response dict or generator if stream=True
+        Response dict
     """
     client = LLMClient()
     return client.complete(
@@ -246,13 +299,42 @@ def call_model(
     )
 
 
+async def acall_model(
+    prompt: str,
+    model: str | None = None,
+    max_tokens: int | None = None,
+    temperature: float | None = None,
+) -> Dict[str, Any]:
+    """Call the LLM with a prompt and return parsed response (asynchronous).
+
+    This is the main entry point for asynchronous LLM calls.
+    Uses the configured provider from environment variables.
+
+    Args:
+        prompt: The prompt to send
+        model: Model name (optional, uses default from config)
+        max_tokens: Max tokens (optional, uses default from config)
+        temperature: Temperature (optional, uses default from config)
+
+    Returns:
+        Response dict
+    """
+    client = LLMClient()
+    return await client.acomplete(
+        prompt=prompt,
+        model=model,
+        max_tokens=max_tokens,
+        temperature=temperature
+    )
+
+
 def batch_call_model(
     prompts: List[str],
     model: str | None = None,
     max_tokens: int | None = None,
     temperature: float | None = None,
 ) -> List[Dict[str, Any]]:
-    """Call the LLM with multiple prompts.
+    """Call the LLM with multiple prompts (synchronous batch).
 
     Args:
         prompts: List of prompts to process
@@ -272,6 +354,31 @@ def batch_call_model(
     )
 
 
+async def abatch_call_model(
+    prompts: List[str],
+    model: str | None = None,
+    max_tokens: int | None = None,
+    temperature: float | None = None,
+) -> List[Dict[str, Any]]:
+    """Call the LLM with multiple prompts (asynchronous concurrent batch).
+
+    Args:
+        prompts: List of prompts to process
+        model: Model name (optional)
+        max_tokens: Max tokens (optional)
+        temperature: Temperature (optional)
+
+    Returns:
+        List of response dicts
+    """
+    client = LLMClient()
+    return await client.abatch_complete(
+        prompts=prompts,
+        model=model,
+        max_tokens=max_tokens,
+        temperature=temperature
+    )
+
+
 # Backward compatibility aliases
 DeepSeekProvider = LLMClient  # Alias for backward compatibility
-

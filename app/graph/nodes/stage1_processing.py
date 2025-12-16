@@ -1,4 +1,4 @@
-"""Stage 1 processing node for workflow."""
+"""Stage 1 processing node for workflow (async version)."""
 
 from datetime import datetime
 from typing import Any, Dict, Literal
@@ -8,12 +8,12 @@ from app.services.llm.provider import LLMClient
 from app.services.prompt_manager import get_prompt_manager
 
 
-def node_stage1_process(state: WorkflowState) -> Dict[str, Any]:
-    """Process a single chunk with Stage 1 LLM call.
+async def node_stage1_process(state: WorkflowState) -> Dict[str, Any]:
+    """Process a single chunk with Stage 1 LLM call (async).
 
     This node:
     - Gets the current chunk to process
-    - Calls LLM with Stage 1 prompt
+    - Calls LLM with Stage 1 prompt asynchronously
     - Records the result
     - Advances to next chunk or completes
 
@@ -48,9 +48,9 @@ def node_stage1_process(state: WorkflowState) -> Dict[str, Any]:
         prompt_manager = get_prompt_manager()
         prompt = prompt_manager.format_stage1_prompt(style=style, chunk_text=chunk_text)
 
-        # Call LLM
+        # Call LLM asynchronously
         client = LLMClient()
-        response = client.complete(
+        response = await client.acomplete(
             prompt=prompt,
             max_tokens=4000,
             temperature=0.7,

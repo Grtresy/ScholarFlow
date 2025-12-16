@@ -35,8 +35,18 @@ class Settings:
     mineru_api_key: str | None = None
     mineru_endpoint: str | None = None
 
+    # Storage Configuration
+    storage_backend: str = "local"  # 'local', 's3', etc.
+
     # Data Directory
     data_dir: Path | None = None
+
+    # MariaDB Configuration for Workflow State Persistence
+    mariadb_host: str = "localhost"
+    mariadb_port: int = 3306
+    mariadb_user: str = "scholarflow"
+    mariadb_password: str = ""
+    mariadb_db: str = "scholarflow_state"
 
 
 @lru_cache(maxsize=1)
@@ -53,6 +63,16 @@ def get_settings() -> Settings:
         mineru_api_key=os.getenv("MINERU_API_KEY"),
         mineru_endpoint=os.getenv("MINERU_ENDPOINT"),
 
+        # Storage Configuration
+        storage_backend=os.getenv("STORAGE_BACKEND", "local"),
+
         # Data Directory
         data_dir=Path(os.getenv("DATA_DIR", "data")) if os.getenv("DATA_DIR") else None,
+
+        # MariaDB Configuration for Workflow State Persistence
+        mariadb_host=os.getenv("MARIA_DB_HOST", "localhost"),
+        mariadb_port=int(os.getenv("MARIA_DB_PORT", "3306")),
+        mariadb_user=os.getenv("MARIA_DB_USER", "scholarflow"),
+        mariadb_password=os.getenv("MARIA_DB_PASSWORD", ""),
+        mariadb_db=os.getenv("MARIA_DB_NAME", "scholarflow_state"),
     )

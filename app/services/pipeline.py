@@ -17,9 +17,6 @@ from app.services.llm_logger import create_logger
 # Import prompt templates
 from app.services.llm.prompts import prompt_templates
 
-# Import new workflow orchestrator
-from app.services.workflow_orchestrator import WorkflowOrchestrator
-
 
 class PipelineStatus:
     """Status tracking for pipeline execution."""

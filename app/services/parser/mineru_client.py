@@ -133,11 +133,22 @@ class MinerUClient:
             print(f"❌ Upload exception: {e}")
             return False
 
-    def _poll_and_download(self, batch_id: str, output_dir: Path) -> Dict[str, Any]:
-        """Poll for processing results and download when complete."""
+    def _poll_and_download(self, batch_id: str, output_dir: Path, timeout: int = 600) -> Dict[str, Any]:
+        """Poll for processing results and download when complete.
+
+        Args:
+            batch_id: Batch ID from upload
+            output_dir: Directory to save results
+            timeout: Maximum time to wait in seconds (default: 600 = 10 minutes)
+        """
         url = f"{self.base_url}/extract-results/batch/{batch_id}"
+        start_time = time.time()
 
         while True:
+            # Check timeout
+            if time.time() - start_time > timeout:
+                raise RuntimeError(f"Timeout: PDF processing took longer than {timeout} seconds")
+
             try:
                 res = requests.get(url, headers=self.headers, timeout=30)
                 res_json = res.json()
@@ -171,15 +182,23 @@ class MinerUClient:
                     progress = file_result.get("extract_progress", {})
                     extracted = progress.get("extracted_pages", 0)
                     total = progress.get("total_pages", "?")
-                    print(f"\r⏳ Processing... Extracted {extracted}/{total} pages", end="", flush=True)
+                    elapsed = int(time.time() - start_time)
+                    print(f"\r⏳ Processing... Extracted {extracted}/{total} pages (elapsed: {elapsed}s)", end="", flush=True)
 
                 else:
-                    print(f"\r⏳ Status: {state}...", end="", flush=True)
+                    elapsed = int(time.time() - start_time)
+                    print(f"\r⏳ Status: {state}... (elapsed: {elapsed}s)", end="", flush=True)
 
                 time.sleep(3)
 
+            except requests.exceptions.Timeout:
+                elapsed = int(time.time() - start_time)
+                print(f"\r⚠️  Request timeout after {elapsed}s, retrying...", end="", flush=True)
+                time.sleep(5)
+                continue
             except Exception as e:
-                raise RuntimeError(f"Processing exception: {e}")
+                elapsed = int(time.time() - start_time)
+                raise RuntimeError(f"Processing exception after {elapsed}s: {e}")
 
     def _download_and_extract(self, url: str, output_dir: Path) -> None:
         """Download ZIP file and extract to output directory."""
