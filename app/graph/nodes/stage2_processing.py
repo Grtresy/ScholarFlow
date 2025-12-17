@@ -49,7 +49,7 @@ async def node_stage2_process(state: WorkflowState) -> Dict[str, Any]:
         marp_markdown = response.get("content", "")
 
         # Save Marp markdown
-        output_dir = Path("data/intermediate") / task_id
+        output_dir = Path("data/workflow/intermediate") / task_id
         output_dir.mkdir(parents=True, exist_ok=True)
         marp_path = output_dir / "presentation.md"
         marp_path.write_text(marp_markdown, encoding="utf-8")

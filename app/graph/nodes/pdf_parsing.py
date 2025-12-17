@@ -27,7 +27,7 @@ def node_parse_pdf(state: WorkflowState) -> Dict[str, Any]:
     task_id = state["task_id"]
 
     # Prepare output directory
-    output_dir = Path("data/intermediate") / task_id
+    output_dir = Path("data/workflow/intermediate") / task_id
     output_dir.mkdir(parents=True, exist_ok=True)
 
     try:
@@ -45,7 +45,7 @@ def node_parse_pdf(state: WorkflowState) -> Dict[str, Any]:
         markdown_text = markdown_path.read_text(encoding="utf-8")
 
         # Initialize ImageManager for tokenization
-        image_manager = ImageManager(Path("data/intermediate"))
+        image_manager = ImageManager(Path("data/workflow/intermediate"))
         task_dir = image_manager.create_task_dir(task_id)
 
         # Tokenize image references to protect hashes during LLM processing

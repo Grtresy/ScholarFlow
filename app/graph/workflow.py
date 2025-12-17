@@ -56,6 +56,27 @@ def route_on_error(state: WorkflowState) -> str:
     return "continue"
 
 
+def route_after_error(state: WorkflowState) -> str:
+    """Route after error handling based on updated status.
+
+    Args:
+        state: Current workflow state after error handling
+
+    Returns:
+        'retry' to restart from parsing, 'end' to finish
+    """
+    status = state.get("status", "")
+    if status == TaskStatus.PARSING.value:
+        # Successfully reset for retry - go back to parsing
+        return "retry"
+    elif status == TaskStatus.FAILED.value:
+        # Max retries reached - end the workflow
+        return "end"
+    else:
+        # Unexpected status - end the workflow
+        return "end"
+
+
 def create_workflow() -> StateGraph:
     """Create the ScholarFlow workflow graph.
 
@@ -136,8 +157,15 @@ def create_workflow() -> StateGraph:
     # render -> end
     workflow.add_edge("render", END)
 
-    # handle_error -> end (after retry logic)
-    workflow.add_edge("handle_error", END)
+    # handle_error -> (retry or end based on status)
+    workflow.add_conditional_edges(
+        "handle_error",
+        route_after_error,
+        {
+            "retry": "parse_pdf",  # Retry: go back to parse_pdf
+            "end": END,            # Fail: end the workflow
+        }
+    )
 
     return workflow
 
@@ -155,13 +183,12 @@ def compile_workflow(with_checkpointer: bool = True):
 
     if with_checkpointer:
         checkpointer = get_checkpointer()
-        return workflow.compile(checkpointer=checkpointer.saver)
+        return workflow.compile(
+            checkpointer=checkpointer.saver,
+            interrupt_before=["process_feedback"]  # 在process_feedback节点前中断
+        )
     else:
-        return workflow.compile()
-
-
-# Pre-compiled workflow instance
-_compiled_workflow = None
+        return workflow.compile(interrupt_before=["process_feedback"])
 
 
 def get_workflow():
@@ -170,10 +197,10 @@ def get_workflow():
     Returns:
         Compiled workflow
     """
-    global _compiled_workflow
-    if _compiled_workflow is None:
-        _compiled_workflow = compile_workflow(with_checkpointer=True)
-    return _compiled_workflow
+    # Always recompile to ensure interrupt_before settings are applied
+    # This is necessary because the global _compiled_workflow may be cached
+    # from a previous version without interrupt_before
+    return compile_workflow(with_checkpointer=True)
 
 
 async def run_workflow(
@@ -259,21 +286,6 @@ async def resume_workflow(
     await initialize_checkpointer()
 
     workflow = get_workflow()
-    checkpointer = get_checkpointer()
-
-    # Load current state
-    state = checkpointer.load_state(task_id)
-    if not state:
-        # Fallback: attempt to construct minimal state from feedback to continue
-        if human_feedback:
-            state = WorkflowState(task_id=task_id, human_feedback=human_feedback)
-        else:
-            raise ValueError(f"No state found for task {task_id}")
-
-    # Inject human feedback if provided
-    if human_feedback:
-        state["human_feedback"] = human_feedback
-        state["needs_human_review"] = False
 
     config = {
         "configurable": {
@@ -281,12 +293,18 @@ async def resume_workflow(
         }
     }
 
-    # Resume workflow
-    final_state = await workflow.ainvoke(state, config)
-    # Persist updated state
-    try:
-        if final_state:
-            checkpointer.save_state(task_id, WorkflowState(**final_state), "resume")
-    except Exception:
-        pass
+    # 使用 update_state 注入 human_feedback 到 checkpoint state
+    # 这是 LangGraph 推荐的方式，用于在 interrupt_before 后注入数据
+    if human_feedback:
+        await workflow.aupdate_state(
+            config,
+            {
+                "human_feedback": human_feedback,
+                "needs_human_review": False,
+            }
+        )
+
+    # Resume workflow from interrupt point
+    # 传入 None 告诉 LangGraph 从 checkpoint 继续，而不是重新开始
+    final_state = await workflow.ainvoke(None, config)
     return final_state

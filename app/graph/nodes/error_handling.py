@@ -1,7 +1,7 @@
 """Error handling node for workflow."""
 
 from datetime import datetime
-from typing import Any, Dict, Literal
+from typing import Any, Dict
 
 from app.graph.state import TaskStatus, WorkflowState
 
@@ -36,13 +36,6 @@ def node_handle_error(state: WorkflowState) -> Dict[str, Any]:
     execution_log = state.get("execution_log", [])
     execution_log.append(log_entry)
 
-    # Check if status is actually an error
-    if status != TaskStatus.FAILED.value:
-        # Not an error, just pass through
-        return {
-            "execution_log": execution_log,
-        }
-
     if retry_count < max_retries:
         # Can retry - reset to parsing stage
         return {
@@ -58,28 +51,10 @@ def node_handle_error(state: WorkflowState) -> Dict[str, Any]:
         # Max retries reached
         return {
             "status": TaskStatus.FAILED.value,
+            "retry_count": retry_count,
             "error_message": f"Maximum retries ({max_retries}) exceeded. Last error: {error_message}",
             "current_step": f"任务失败：重试{max_retries}次后仍然失败",
             "progress_percentage": 0.0,
             "updated_at": datetime.now().isoformat(),
             "execution_log": execution_log,
         }
-
-
-def should_retry(state: WorkflowState) -> Literal["retry", "fail"]:
-    """Determine if the workflow should retry.
-
-    Args:
-        state: Current workflow state
-
-    Returns:
-        'retry' to restart, 'fail' to end
-    """
-    status = state.get("status", "")
-    retry_count = state.get("retry_count", 0)
-    max_retries = state.get("max_retries", 3)
-
-    if status == TaskStatus.FAILED.value and retry_count < max_retries:
-        return "retry"
-    else:
-        return "fail"

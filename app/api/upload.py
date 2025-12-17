@@ -19,11 +19,11 @@ from typing import Optional
 router = APIRouter(prefix="/api", tags=["upload"])
 
 # Directory for uploaded PDFs
-UPLOAD_DIR = "data/inputs"
+UPLOAD_DIR = "data/upload"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 # Directory for generated presentations
-OUTPUT_DIR = "data/outputs"
+OUTPUT_DIR = "data/workflow/output"
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 

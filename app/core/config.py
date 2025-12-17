@@ -19,7 +19,8 @@ try:
         load_dotenv(env_file)
 except ImportError:
     # python-dotenv not installed, skip
-    pass
+    # 抛出异常
+    raise ImportError("python-dotenv is not installed. Please install it to load environment variables from a .env file.")
 
 
 @dataclass

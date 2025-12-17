@@ -16,7 +16,7 @@ from app.graph.state import (
 from app.graph.workflow import resume_workflow, run_workflow
 from app.storage.checkpointer import get_checkpointer
 
-router = APIRouter(prefix="/api/v2", tags=["tasks"])
+router = APIRouter(prefix="/api/tasks", tags=["tasks"])
 
 
 # ===== Request Models =====

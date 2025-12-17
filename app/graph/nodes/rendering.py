@@ -41,7 +41,7 @@ def node_render(state: WorkflowState) -> Dict[str, Any]:
             UserWarning,
             stacklevel=2
         )
-        token_map_path = Path("data/intermediate") / task_id / "token_map.json"
+        token_map_path = Path("data/workflow/intermediate") / task_id / "token_map.json"
         if token_map_path.exists():
             try:
                 with open(token_map_path, 'r', encoding='utf-8') as f:
@@ -60,7 +60,7 @@ def node_render(state: WorkflowState) -> Dict[str, Any]:
     try:
         # Restore tokens to proper image links before rendering
         if image_token_map:
-            image_manager = ImageManager(Path("data/intermediate"))
+            image_manager = ImageManager(Path("data/workflow/intermediate"))
             marp_markdown = image_manager.restore_tokens_to_markdown_enhanced(
                 tokenized_content=marp_markdown,
                 token_map=image_token_map,
@@ -74,7 +74,7 @@ def node_render(state: WorkflowState) -> Dict[str, Any]:
             input_md.write_text(marp_markdown, encoding="utf-8")
         else:
             # Save markdown to file first
-            output_dir = Path("data/intermediate") / task_id
+            output_dir = Path("data/workflow/intermediate") / task_id
             output_dir.mkdir(parents=True, exist_ok=True)
             input_md = output_dir / "presentation.md"
             input_md.write_text(marp_markdown, encoding="utf-8")
@@ -87,7 +87,7 @@ def node_render(state: WorkflowState) -> Dict[str, Any]:
             }
 
         # Prepare output path
-        output_dir = Path("data/outputs") / task_id
+        output_dir = Path("data/workflow/output") / task_id
         output_dir.mkdir(parents=True, exist_ok=True)
         output_base = output_dir / "presentation"
 

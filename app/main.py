@@ -166,13 +166,12 @@ def run_split(md_path: Path, max_chars: int | None, target_chunks: int | None) -
 
 
 def create_app():
-    """Create FastAPI application with v2 API routes and upload endpoints."""
+    """Create FastAPI application with API routes and upload endpoints."""
     from fastapi import FastAPI
     from fastapi.middleware.cors import CORSMiddleware
 
-    from app.api.v2 import tasks_router
+    from app.api.tasks import router as tasks_router
     from app.api.upload import router as upload_router
-    from app.api.debug import router as debug_router
 
     app = FastAPI(
         title="ScholarFlow API",
@@ -192,7 +191,6 @@ def create_app():
     # Register API routes
     app.include_router(tasks_router)
     app.include_router(upload_router)
-    app.include_router(debug_router)
 
     # Health check endpoint
     @app.get("/health")
@@ -209,11 +207,11 @@ def create_app():
             "endpoints": {
                 "upload_pdf": "POST /api/upload",
                 "download_result": "GET /api/download/{task_id}",
-                "create_task": "POST /api/v2/tasks",
-                "get_status": "GET /api/v2/tasks/{task_id}/status",
-                "get_result": "GET /api/v2/tasks/{task_id}/result",
-                "submit_feedback": "POST /api/v2/tasks/{task_id}/human-feedback",
-                "list_tasks": "GET /api/v2/tasks",
+                "create_task": "POST /api/tasks",
+                "get_status": "GET /api/tasks/{task_id}/status",
+                "get_result": "GET /api/tasks/{task_id}/result",
+                "submit_feedback": "POST /api/tasks/{task_id}/human-feedback",
+                "list_tasks": "GET /api/tasks",
             },
         }
 

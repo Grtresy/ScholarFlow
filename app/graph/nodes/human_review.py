@@ -3,15 +3,16 @@
 from datetime import datetime
 from typing import Any, Dict, Literal
 
+from langgraph.types import Command
+
 from app.graph.state import TaskStatus, WorkflowState
-from app.storage.checkpointer import get_checkpointer
 
 
 def node_human_review(state: WorkflowState) -> Dict[str, Any]:
     """Prepare state for human review.
 
     This node is triggered when human review is needed.
-    It sets up the review context and waits for human input.
+    It sets up the review context and pauses for human input.
 
     Args:
         state: Current workflow state
@@ -40,6 +41,8 @@ def node_human_review(state: WorkflowState) -> Dict[str, Any]:
     execution_log = state.get("execution_log", [])
     execution_log.append(log_entry)
 
+    # Note: LangGraph will automatically save state before interrupt
+    # No manual persistence needed
     result = {
         "status": TaskStatus.HUMAN_REVIEW.value,
         "needs_human_review": True,
@@ -47,14 +50,7 @@ def node_human_review(state: WorkflowState) -> Dict[str, Any]:
         "updated_at": datetime.now().isoformat(),
         "execution_log": execution_log,
     }
-    # Persist paused state so HIL can resume later
-    try:
-        task_id = state.get("task_id") or "default"
-        checkpointer = get_checkpointer()
-        checkpointer.save_state(task_id, WorkflowState(**{**state, **result}), "human_review")
-    except Exception:
-        # Fail-safe: do not block the graph if persistence fails
-        pass
+    # LangGraph会在到达process_feedback前自动中断并保存状态，无需手动保存
     return result
 
 
@@ -70,10 +66,24 @@ def node_process_feedback(state: WorkflowState) -> Dict[str, Any]:
     Returns:
         State updates based on feedback
     """
-    feedback = state.get("human_feedback", {})
-    approved = feedback.get("approved", False)
-    action = feedback.get("action", "")
-    comments = feedback.get("comments", "")
+    # When using Command(resume=...), the resume value is in the state
+    # Handle both direct human_feedback and Command resume
+    feedback_data = state.get("human_feedback", {})
+    # If Command was used with resume, the resume value is directly the feedback dict
+    if not feedback_data and isinstance(state.get("input"), dict):
+        # Check if input contains the feedback (from Command resume)
+        potential_feedback = state.get("input", {})
+        if isinstance(potential_feedback, dict) and "action" in potential_feedback:
+            feedback_data = potential_feedback
+    # Fallback: also check if input itself is the feedback
+    if not feedback_data and isinstance(state.get("input"), dict):
+        input_data = state.get("input", {})
+        if isinstance(input_data, dict) and any(k in input_data for k in ["action", "approved", "comments"]):
+            feedback_data = input_data
+
+    approved = feedback_data.get("approved", False)
+    action = feedback_data.get("action", "")
+    comments = feedback_data.get("comments", "")
 
     # Log feedback
     log_entry = {
@@ -126,30 +136,17 @@ def node_process_feedback(state: WorkflowState) -> Dict[str, Any]:
             "updated_at": datetime.now().isoformat(),
             "execution_log": execution_log,
         }
-        try:
-            task_id = state.get("task_id") or "default"
-            checkpointer = get_checkpointer()
-            checkpointer.save_state(task_id, WorkflowState(**{**state, **result}), "process_feedback")
-        except Exception:
-            pass
         return result
     else:
-        # Default: pause the task for later review
+        # 未定义的操作，结束任务
         result = {
-            "status": TaskStatus.PAUSED.value,
+            "status": TaskStatus.FAILED.value,
             "approved": False,
-            "needs_human_review": True,
-            "current_step": f"任务暂停：{comments or '等待进一步指示'}",
+            "error_message": f"未知的反馈操作: {action}",
+            "current_step": "任务因未知操作而结束",
             "updated_at": datetime.now().isoformat(),
             "execution_log": execution_log,
         }
-        # Persist paused state so it can be resumed
-        try:
-            task_id = state.get("task_id") or "default"
-            checkpointer = get_checkpointer()
-            checkpointer.save_state(task_id, WorkflowState(**{**state, **result}), "process_feedback")
-        except Exception:
-            pass
         return result
 
 

@@ -45,8 +45,8 @@ class WorkflowCheckpointer:
 
     def __init__(
         self,
-        db_path: str = "data/workflows/checkpoints.db",
-        json_path: str = "data/workflows/workflow_state.db",
+        db_path: str = "data/workflow/checkpoints.db",
+        json_path: str = "data/workflow/workflow_state.db",
     ):
         """Initialize the checkpointer (without opening connection).
 
@@ -219,16 +219,18 @@ class WorkflowCheckpointer:
 
     def _save_to_json(self, task_id: str, state: WorkflowState) -> None:
         """Save state to JSON file for quick access."""
-        tasks_dir = self.json_path.parent / "tasks"
-        tasks_dir.mkdir(parents=True, exist_ok=True)
+        # Save to the task's intermediate directory for better organization
+        task_dir = self.json_path.parent / "intermediate" / task_id
+        task_dir.mkdir(parents=True, exist_ok=True)
 
-        task_file = tasks_dir / f"{task_id}.json"
+        task_file = task_dir / f"{task_id}.json"
         with open(task_file, "w", encoding="utf-8") as f:
             json.dump(dict(state), f, ensure_ascii=False, indent=2)
 
     def _load_from_json(self, task_id: str) -> Optional[WorkflowState]:
         """Load state from JSON file."""
-        task_file = self.json_path.parent / "tasks" / f"{task_id}.json"
+        # Load from the task's intermediate directory
+        task_file = self.json_path.parent / "intermediate" / task_id / f"{task_id}.json"
 
         if not task_file.exists():
             return None
@@ -264,8 +266,8 @@ async def initialize_checkpointer(
     global _checkpointer
     if _checkpointer is None:
         _checkpointer = WorkflowCheckpointer(
-            db_path=db_path or "data/workflows/checkpoints.db",
-            json_path=json_path or "data/workflows/workflow_state.db",
+            db_path=db_path or "data/workflow/checkpoints.db",
+            json_path=json_path or "data/workflow/workflow_state.db",
         )
         await _checkpointer.initialize()
     return _checkpointer
@@ -292,7 +294,7 @@ def get_checkpointer(
     global _checkpointer
     if _checkpointer is None:
         _checkpointer = WorkflowCheckpointer(
-            db_path=db_path or "data/workflows/checkpoints.db",
-            json_path=json_path or "data/workflows/workflow_state.db",
+            db_path=db_path or "data/workflow/checkpoints.db",
+            json_path=json_path or "data/workflow/workflow_state.db",
         )
     return _checkpointer

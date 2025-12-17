@@ -47,7 +47,7 @@ def node_merge_outlines(state: WorkflowState) -> Dict[str, Any]:
         merged = merge_outlines(successful_results)
 
         # Save merged outline
-        output_dir = Path("data/intermediate") / task_id
+        output_dir = Path("data/workflow/intermediate") / task_id
         output_dir.mkdir(parents=True, exist_ok=True)
         outline_path = output_dir / "merged_outline.md"
         outline_path.write_text(merged, encoding="utf-8")
