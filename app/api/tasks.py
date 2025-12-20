@@ -14,6 +14,7 @@ from app.graph.state import (
     create_initial_state,
 )
 from app.graph.workflow import resume_workflow, run_workflow
+from app.services.llm.prompts.prompt_templates import save_custom_templates
 from app.storage.checkpointer import get_checkpointer
 
 router = APIRouter(prefix="/api/tasks", tags=["tasks"])
@@ -30,10 +31,12 @@ class CreateTaskRequest(BaseModel):
         default="academic",
         description="Presentation style: academic, popular, or business",
     )
-    max_chars: int = Field(default=6000, description="Maximum characters per chunk")
+    max_chars: int = Field(default=60000, description="Maximum characters per chunk")
     target_chunks: int = Field(default=6, description="Target number of chunks")
     output_format: str = Field(default="pptx", description="Output format: pptx, pdf, or html")
     enable_human_review: bool = Field(default=True, description="Enable human review")
+    custom_stage1_prompt: Optional[str] = Field(None, description="Custom Stage 1 prompt template")
+    custom_stage2_prompt: Optional[str] = Field(None, description="Custom Stage 2 prompt template")
 
 
 class HumanFeedbackRequest(BaseModel):
@@ -149,6 +152,14 @@ async def create_task(
     checkpointer = get_checkpointer()
     checkpointer.save_state(task_id, initial_state, "create")
 
+    # Save custom prompts if provided
+    if request.custom_stage1_prompt or request.custom_stage2_prompt:
+        save_custom_templates(
+            task_id=task_id,
+            stage1_template=request.custom_stage1_prompt,
+            stage2_template=request.custom_stage2_prompt,
+        )
+
     # Start workflow in background
     background_tasks.add_task(run_workflow_background, task_id, initial_state)
 
@@ -235,6 +246,27 @@ async def submit_human_feedback(
         "modifications": feedback.modifications,
         "timestamp": datetime.now().isoformat(),
     }
+
+    # Immediately update status to prevent race condition
+    # Frontend polls immediately, so we must update status before background task runs
+    if feedback.approved:
+        new_status = TaskStatus.STAGE2_PROCESSING.value
+        current_step = "审核通过，准备进入Stage 2"
+    elif feedback.action == "regenerate":
+        new_status = TaskStatus.STAGE1_PROCESSING.value
+        current_step = "准备重新生成"
+    elif feedback.action == "abort":
+        new_status = TaskStatus.FAILED.value
+        current_step = "任务被用户终止"
+    else:
+        new_status = TaskStatus.STAGE2_PROCESSING.value
+        current_step = "处理中"
+    
+    state["status"] = new_status
+    state["needs_human_review"] = False
+    state["current_step"] = current_step
+    state["updated_at"] = datetime.now().isoformat()
+    checkpointer.save_state(task_id, state, "feedback_received")
 
     # Resume workflow with feedback
     background_tasks.add_task(resume_workflow, task_id, feedback_dict)
@@ -347,3 +379,91 @@ async def cancel_task(task_id: str):
     checkpointer.save_state(task_id, state, "cancel")
 
     return {"status": "success", "message": f"Task {task_id} cancelled"}
+
+
+# ===== Markdown Content Endpoints =====
+
+
+class SaveMarkdownRequest(BaseModel):
+    """Request model for saving markdown content."""
+    content: str = Field(..., description="Markdown content")
+    stage: str = Field(default="marp_markdown", description="Stage: merged_outline or marp_markdown")
+
+
+@router.get("/tasks/{task_id}/markdown")
+async def get_markdown_content(task_id: str, stage: Optional[str] = None):
+    """Get markdown content for a task.
+
+    Args:
+        task_id: Task identifier
+        stage: Optional stage filter ('merged_outline' or 'marp_markdown')
+    """
+    checkpointer = get_checkpointer()
+    state = checkpointer.load_state(task_id)
+
+    if not state:
+        raise HTTPException(status_code=404, detail=f"Task not found: {task_id}")
+
+    if stage == "merged_outline":
+        content = state.get("merged_outline", "")
+    elif stage == "marp_markdown":
+        content = state.get("marp_markdown", "")
+    else:
+        # Return latest available markdown
+        content = state.get("marp_markdown") or state.get("merged_outline", "")
+        stage = "marp_markdown" if state.get("marp_markdown") else "merged_outline"
+
+    return {
+        "task_id": task_id,
+        "content": content,
+        "stage": stage,
+        "updated_at": state.get("updated_at"),
+    }
+
+
+@router.post("/tasks/{task_id}/markdown")
+async def save_markdown_content(
+    task_id: str,
+    request: SaveMarkdownRequest,
+    background_tasks: BackgroundTasks,
+):
+    """Save edited markdown content.
+
+    Args:
+        task_id: Task identifier
+        request: SaveMarkdownRequest with content and stage
+    """
+    checkpointer = get_checkpointer()
+    state = checkpointer.load_state(task_id)
+
+    if not state:
+        raise HTTPException(status_code=404, detail=f"Task not found: {task_id}")
+
+    content = request.content
+    stage = request.stage
+
+    # Update state with new content
+    if stage == "merged_outline":
+        state["merged_outline"] = content
+    elif stage == "marp_markdown":
+        state["marp_markdown"] = content
+
+    state["updated_at"] = datetime.now().isoformat()
+    checkpointer.save_state(task_id, state, "markdown_updated")
+
+    # Trigger re-render if in completed state
+    if state.get("status") == TaskStatus.COMPLETED.value:
+        background_tasks.add_task(rerender_presentation, task_id, content)
+
+    return {
+        "status": "success",
+        "message": "Markdown saved",
+        "task_id": task_id,
+    }
+
+
+async def rerender_presentation(task_id: str, markdown: str):
+    """Background task to re-render presentation with updated markdown."""
+    # TODO: Implement re-rendering logic
+    # This would involve calling the Marp renderer with the new markdown
+    pass

@@ -6,7 +6,7 @@ from typing import Any, Dict
 
 from app.graph.state import TaskStatus, WorkflowState
 from app.services.llm.provider import LLMClient
-from app.services.llm.prompts.prompt_templates import STAGE2_PROMPT
+from app.services.llm.prompts.prompt_templates import format_stage2_prompt
 
 
 async def node_stage2_process(state: WorkflowState) -> Dict[str, Any]:
@@ -25,7 +25,7 @@ async def node_stage2_process(state: WorkflowState) -> Dict[str, Any]:
     """
     merged_outline = state.get("merged_outline", "")
     style = state.get("presentation_style", "academic")
-    task_id = state.get("task_id", "unknown")
+    task_id = state.get("task_id")
 
     if not merged_outline:
         return {
@@ -35,8 +35,12 @@ async def node_stage2_process(state: WorkflowState) -> Dict[str, Any]:
         }
 
     try:
-        # Format prompt with style and outline
-        prompt = STAGE2_PROMPT.format(style=style.capitalize(), outline=merged_outline)
+        # Format prompt with dynamic template system
+        prompt = format_stage2_prompt(
+            style=style,
+            outline=merged_outline,
+            task_id=task_id
+        )
 
         # Call LLM asynchronously
         client = LLMClient()

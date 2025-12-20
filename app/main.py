@@ -165,6 +165,24 @@ def run_split(md_path: Path, max_chars: int | None, target_chunks: int | None) -
     return merge_chunks(chunks, target_count=target_chunks)
 
 
+async def lifespan(app):
+    """Lifespan context manager for FastAPI app startup/shutdown."""
+    from app.storage.checkpointer import initialize_checkpointer, get_checkpointer
+    
+    # Startup: Initialize checkpointer
+    print("🚀 Initializing checkpointer...")
+    await initialize_checkpointer()
+    print("✓ Checkpointer initialized")
+    
+    yield
+    
+    # Shutdown: Cleanup checkpointer
+    print("🔒 Closing checkpointer...")
+    checkpointer = get_checkpointer()
+    await checkpointer.close()
+    print("✓ Checkpointer closed")
+
+
 def create_app():
     """Create FastAPI application with API routes and upload endpoints."""
     from fastapi import FastAPI
@@ -172,17 +190,20 @@ def create_app():
 
     from app.api.tasks import router as tasks_router
     from app.api.upload import router as upload_router
+    from app.api.prompts import router as prompts_router
+    from app.api.render import router as render_router
 
     app = FastAPI(
         title="ScholarFlow API",
         description="Academic Paper to Presentation Generator",
         version="2.0.0",
+        lifespan=lifespan,
     )
 
     # Add CORS middleware
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["http://localhost:3000", "http://localhost:5173"],  # React dev servers
+        allow_origins=["*"],  # Allow all origins for easier network access
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
@@ -191,6 +212,8 @@ def create_app():
     # Register API routes
     app.include_router(tasks_router)
     app.include_router(upload_router)
+    app.include_router(prompts_router)
+    app.include_router(render_router)
 
     # Health check endpoint
     @app.get("/health")

@@ -1,7 +1,7 @@
 import json
 from typing import List, Dict, Any, Optional
 
-DEFAULT_MAX_CHARS = 6000
+DEFAULT_MAX_CHARS = 60000
 
 
 def split_markdown(md: str, max_chars: int = DEFAULT_MAX_CHARS) -> List[Dict[str, Any]]:

@@ -105,9 +105,31 @@ async def download_result(task_id: str):
     Raises:
         HTTPException: If file not found
     """
-    # Try to find the output file
-    # The exact filename depends on how the workflow saves files
-    # For now, we'll look for any file with the task_id in OUTPUT_DIR
+    # First check for task_id subdirectory (new structure)
+    task_dir = os.path.join(OUTPUT_DIR, task_id)
+    if os.path.isdir(task_dir):
+        # Look for presentation file in the task directory
+        for ext in ['.pptx', '.pdf', '.html']:
+            presentation_file = os.path.join(task_dir, f'presentation{ext}')
+            if os.path.isfile(presentation_file):
+                return FileResponse(
+                    path=presentation_file,
+                    filename=f'{task_id}_presentation{ext}',
+                    media_type="application/octet-stream"
+                )
+        
+        # If no standard name, look for any file in the directory
+        for filename in os.listdir(task_dir):
+            file_path = os.path.join(task_dir, filename)
+            if os.path.isfile(file_path):
+                return FileResponse(
+                    path=file_path,
+                    filename=filename,
+                    media_type="application/octet-stream"
+                )
+    
+    # Fallback: Try to find the output file by task_id in filename
+    # (for legacy structure)
     for filename in os.listdir(OUTPUT_DIR):
         if task_id in filename:
             file_path = os.path.join(OUTPUT_DIR, filename)

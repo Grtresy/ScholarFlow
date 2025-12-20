@@ -176,7 +176,7 @@ async def main_async(args: argparse.Namespace) -> int:
 
 def build_arg_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description="Run real-data HIL test for ScholarFlow")
-    p.add_argument("--pdf", default=str(Path("tests/inputs/第13周作业题.pdf").resolve()), help="Path to input PDF")
+    p.add_argument("--pdf", default=str(Path("tests/inputs/[Book] Cellobiose dehydrogenase.pdf").resolve()), help="Path to input PDF")
     p.add_argument("--style", default="academic", help="Presentation style: academic/popular/business")
     p.add_argument("--format", default="pptx", help="Output format: pptx/pdf/html")
     p.add_argument("--max-chars", type=int, default=6000, help="Maximum characters per chunk")

@@ -138,7 +138,7 @@ def create_initial_state(
     task_id: str,
     pdf_path: str,
     presentation_style: str = PresentationStyle.ACADEMIC.value,
-    max_chars: int = 6000,
+    max_chars: int = 60000,
     target_chunks: int = 6,
     output_format: str = "pptx",
     enable_human_review: bool = True,

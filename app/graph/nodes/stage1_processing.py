@@ -5,7 +5,7 @@ from typing import Any, Dict, Literal
 
 from app.graph.state import TaskStatus, WorkflowState
 from app.services.llm.provider import LLMClient
-from app.services.llm.prompts.prompt_templates import STAGE1_PROMPT
+from app.services.llm.prompts.prompt_templates import format_stage1_prompt
 
 
 async def node_stage1_process(state: WorkflowState) -> Dict[str, Any]:
@@ -27,6 +27,7 @@ async def node_stage1_process(state: WorkflowState) -> Dict[str, Any]:
     current_index = state.get("current_chunk_index", 0)
     stage1_results = state.get("stage1_results", [])
     style = state.get("presentation_style", "academic")
+    task_id = state.get("task_id")
 
     # Check if all chunks processed
     if current_index >= len(chunks):
@@ -44,8 +45,12 @@ async def node_stage1_process(state: WorkflowState) -> Dict[str, Any]:
     chunk_text = chunk.get("text", "")
 
     try:
-        # Format prompt with style and content
-        prompt = STAGE1_PROMPT.format(style=style.capitalize(), content=chunk_text)
+        # Format prompt with dynamic template system
+        prompt = format_stage1_prompt(
+            style=style,
+            content=chunk_text,
+            task_id=task_id
+        )
 
         # Call LLM asynchronously
         client = LLMClient()

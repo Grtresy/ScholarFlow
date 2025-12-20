@@ -307,4 +307,15 @@ async def resume_workflow(
     # Resume workflow from interrupt point
     # 传入 None 告诉 LangGraph 从 checkpoint 继续，而不是重新开始
     final_state = await workflow.ainvoke(None, config)
+    
+    # Save final state to checkpointer (same as run_workflow)
+    try:
+        if final_state:
+            checkpointer = get_checkpointer()
+            checkpointer.save_state(task_id, WorkflowState(**final_state), "resume_end")
+    except Exception:
+        # Non-fatal if persistence fails
+        pass
+    
     return final_state
+

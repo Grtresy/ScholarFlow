@@ -1,215 +1,303 @@
-"""Prompt templates for Stage 1/2 generation."""
+"""Prompt templates for Stage 1/2 generation with dynamic loading support."""
 from __future__ import annotations
 
+import json
+import logging
 from pathlib import Path
+from typing import Dict, Optional, Any
+
+logger = logging.getLogger(__name__)
 
 ROOT = Path(__file__).resolve().parent
+TEMPLATES_FILE = ROOT / "templates.json"
 RAW_MARKDOWN = ROOT / "Prompt 模板清单.md"
+
+# Task-specific prompt storage
+PROMPT_STORAGE_DIR = Path("data/workflow/intermediate")
+
+
+class PromptTemplateManager:
+    """Manages prompt templates with support for preset and custom templates."""
+
+    def __init__(self):
+        self._load_preset_templates()
+
+    def _load_preset_templates(self):
+        """Load preset templates from JSON file."""
+        self._preset_templates = {}
+        try:
+            if TEMPLATES_FILE.exists():
+                with open(TEMPLATES_FILE, 'r', encoding='utf-8') as f:
+                    self._preset_templates = json.load(f)
+                logger.info(f"Loaded preset templates from {TEMPLATES_FILE}")
+            else:
+                logger.warning(f"Templates file not found: {TEMPLATES_FILE}")
+        except Exception as e:
+            logger.error(f"Failed to load templates: {e}")
+            self._preset_templates = {}
+
+    def _get_prompt_file(self, task_id: str) -> Path:
+        """Get the path to the prompt JSON file for a task."""
+        task_dir = PROMPT_STORAGE_DIR / task_id
+        task_dir.mkdir(parents=True, exist_ok=True)
+        return task_dir / "prompt.json"
+
+    def save_custom_templates(self, task_id: str, stage1_template: Optional[str] = None,
+                            stage2_template: Optional[str] = None):
+        """
+        Save custom templates for a task to JSON file.
+
+        Args:
+            task_id: Task identifier
+            stage1_template: Custom Stage 1 template (optional)
+            stage2_template: Custom Stage 2 template (optional)
+        """
+        prompt_file = self._get_prompt_file(task_id)
+
+        # Load existing or create new
+        if prompt_file.exists():
+            try:
+                with open(prompt_file, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+            except Exception as e:
+                logger.error(f"Failed to read existing prompt file: {e}")
+                data = {}
+        else:
+            data = {}
+
+        # Update with new templates
+        if stage1_template is not None:
+            data['stage1'] = stage1_template
+        if stage2_template is not None:
+            data['stage2'] = stage2_template
+
+        # Save to file
+        try:
+            with open(prompt_file, 'w', encoding='utf-8') as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
+            logger.info(f"Saved custom templates for task {task_id} to {prompt_file}")
+        except Exception as e:
+            logger.error(f"Failed to save prompt file: {e}")
+            raise
+
+    def load_custom_templates(self, task_id: str) -> Dict[str, Optional[str]]:
+        """
+        Load custom templates for a task from JSON file.
+
+        Args:
+            task_id: Task identifier
+
+        Returns:
+            Dictionary with 'stage1' and 'stage2' keys (values may be None)
+        """
+        prompt_file = self._get_prompt_file(task_id)
+
+        if not prompt_file.exists():
+            logger.info(f"No custom templates found for task {task_id}")
+            return {'stage1': None, 'stage2': None}
+
+        try:
+            with open(prompt_file, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            return {
+                'stage1': data.get('stage1'),
+                'stage2': data.get('stage2')
+            }
+        except Exception as e:
+            logger.error(f"Failed to load prompt file for task {task_id}: {e}")
+            return {'stage1': None, 'stage2': None}
+
+    def get_template(self, task_id: Optional[str], stage: str, style: str = "academic") -> str:
+        """
+        Get template for a specific task, stage, and style.
+
+        Priority:
+        1. Custom template for task_id (from prompt.json)
+        2. Preset template from JSON
+        3. Embedded fallback template
+
+        Args:
+            task_id: Task identifier (None for global lookup)
+            stage: 'stage1' or 'stage2'
+            style: Style name (academic, popular, business)
+
+        Returns:
+            Template string
+        """
+        # Check custom template first
+        custom_templates = {}
+        if task_id:
+            custom_templates = self.load_custom_templates(task_id)
+            if custom_templates.get(stage):
+                logger.info(f"Using custom {stage} template for task {task_id}")
+                return custom_templates[stage]
+
+        # Check preset templates
+        if stage in self._preset_templates and style in self._preset_templates[stage]:
+            return self._preset_templates[stage][style]
+
+        # Fallback to embedded templates
+        embedded = _EMBEDDED_TEMPLATES.get(stage, {})
+        fallback = embedded.get(style, embedded.get("academic", ""))
+        if fallback:
+            logger.warning(f"Using embedded fallback for {stage}, style={style}")
+
+        return fallback
+
+    def format_prompt(self, task_id: Optional[str], stage: str, style: str, **kwargs) -> str:
+        """
+        Format a prompt template with provided variables.
+
+        Args:
+            task_id: Task identifier
+            stage: 'stage1' or 'stage2'
+            style: Style name
+            **kwargs: Variables to replace in template (e.g., content, outline)
+
+        Returns:
+            Formatted prompt string
+        """
+        template = self.get_template(task_id, stage, style)
+
+        # Replace all {variable} placeholders with provided values
+        for key, value in kwargs.items():
+            placeholder = f"{{{key}}}"
+            template = template.replace(placeholder, str(value))
+
+        # Handle {style} placeholder specially (capitalize for backward compatibility)
+        if "{style}" in template:
+            template = template.replace("{style}", style.capitalize())
+
+        return template
+
+    def get_available_styles(self) -> list[str]:
+        """Get list of available preset styles."""
+        styles = set()
+
+        if "stage1" in self._preset_templates:
+            styles.update(self._preset_templates["stage1"].keys())
+        if "stage2" in self._preset_templates:
+            styles.update(self._preset_templates["stage2"].keys())
+
+        return sorted(list(styles))
 
 
 def load_raw_markdown() -> str:
+    """Load the raw markdown documentation file."""
     return RAW_MARKDOWN.read_text(encoding="utf-8")
 
 
-# Stage 1 Prompt Template
-# This template will be formatted with style and content at runtime
-STAGE1_PROMPT = """你现在是一个"学术会议汇报 PPT 大纲生成助手（Stage 1）"。
+# Global instance
+_template_manager = PromptTemplateManager()
 
-**输入**：一份由 MinerU 导出的论文 Markdown 文本片段。这个片段可能是：
-* 整篇论文（从标题到结论），或
-* 其中一个或多个连续章节（例如仅 Methods + Results）。
 
-该片段保留了原文的结构标记，通常包含：
-* 顶部的论文标题、作者、单位、期刊/会议信息（当输入为整篇或包含开头部分时）；
-* 以 `#` / `##` / `###` 开头的章节标题及正文；
-* 普通段落、项目符号列表、引用文字；
-* LaTeX 形式的公式（如 `$...$`、`$$...$$`）；
-* 图表引用与说明（如 `![](https://...jpg)`、`![说明](https://...png)`、`Figure 1. ...`、`图 2 ...`）；
-* 文献引用标记（如 `[1]`、`(Smith et al., 2023)` 等）。
+# Convenience functions
+def get_stage1_template(style: str = "academic", task_id: Optional[str] = None) -> str:
+    """Get Stage 1 template."""
+    return _template_manager.get_template(task_id, "stage1", style)
 
-**目标**：基于当前这份 MinerU 文本片段，生成一份适合{style}风格的 PPT 草案大纲。
 
-请严格遵守以下要求：
+def get_stage2_template(style: str = "academic", task_id: Optional[str] = None) -> str:
+    """Get Stage 2 template."""
+    return _template_manager.get_template(task_id, "stage2", style)
 
-1. **输出语言**：使用中文。
 
-2. **输出形式**：按页面顺序给出大纲，每一页使用如下格式（注意格式和标点）：
-   ```text
-   Slide X：标题
-   - 要点1（1 行短句，概括这一页最核心信息）
-   - 要点2
-   - 要点3（可选）
-   - 要点4（可选）
-   ```
+def format_stage1_prompt(style: str, content: str, task_id: Optional[str] = None) -> str:
+    """Format Stage 1 prompt with content."""
+    return _template_manager.format_prompt(task_id, "stage1", style, content=content)
 
-3. **页面数量**：
-   * 如果当前片段看起来包含了**整篇论文的主要部分**（既有标题、背景，又有方法、结果、结论等），建议总页数控制在 10–15 页；
-   * 如果当前片段只是某个章节（如单独的 Methods / Results 片段），通常输出 2–5 页即可；
-   * 如信息特别密集，可以略多，但应合并明显重复或高度相近的内容。
 
-4. **论文信息识别**（只在片段中真实出现时使用，不要臆造）：
-   * 论文标题：优先从 Markdown 顶部的一级标题（以 `# ` 开头）或最上方大写标题中识别；
-   * 作者与单位：从标题下方若干行中提取人名和机构；如果难以确定，可在标题页写成"作者与单位：见原文顶部"；
-   * 发表信息与年份：若文本中出现会议/期刊名称和年份，尽量在标题页写出；不能确定时直接省略，不要编造；
-   * 若当前片段不包含任何标题/作者信息（例如纯 Methods 片段），**就不要生成标题页**，只生成对应章节内容的 slide。
+def format_stage2_prompt(style: str, outline: str, task_id: Optional[str] = None) -> str:
+    """Format Stage 2 prompt with outline."""
+    return _template_manager.format_prompt(task_id, "stage2", style, outline=outline)
 
-5. **推荐整体结构（用于"整篇论文"场景，可按实际情况删减）**：
-   * 标题页；
-   * 研究背景与问题（1 页）；
-   * 现有方法及局限（1 页）；
-   * 本文核心思想 / 方法概览（1 页）；
-   * 关键方法细节（1–2 页，如重要子模块、训练策略等）；
-   * 方法变体或扩展（可选 1 页）；
-   * 实验设置与评估指标（1 页）；
-   * 主要结果（2–4 页，可按数据集、任务或实验维度拆分）；
-   * 讨论与分析（1 页：为何有效、适用范围、实践启示）；
-   * 结论与贡献（1 页）；
-   * 局限性与未来工作（1 页）。
 
-   如果当前片段只覆盖其中某几个部分（例如只包含"主要结果"相关内容），就**只为这些部分生成对应的 slide 片段**，不要强行补出"背景/结论"等缺失内容。
+def save_custom_templates(task_id: str, stage1_template: Optional[str] = None,
+                        stage2_template: Optional[str] = None):
+    """Save custom templates for a task."""
+    _template_manager.save_custom_templates(task_id, stage1_template, stage2_template)
 
-6. **要点编写要求**：
-   * 每页 2–4 条要点（包含"图："要点在内），不宜超过 4 条；
-   * 每条要点控制在一行内，尽量不超过 40–50 个汉字；
-   * 允许必要的专业术语（如 CLR、LR range test、ResNet 等），但不要展开公式推导；
-   * 不要整句复制论文原文，要用适合演示的概括性表达；
-   * 对于明显属于同一逻辑的小点，宜合并成一条简洁要点，而不是许多碎句。
 
-7. **图片信息保留（非常重要）**：
-   * 若片段中包含 `[[TOKEN_IMG_XXX]]` 标记，请严格保留该标记，不得修改、删除或转换；
+def get_available_styles() -> list[str]:
+    """Get list of available preset styles."""
+    return _template_manager.get_available_styles()
 
-   * 在对应slide中添加一条要点描述图片内容，格式为：
-     ```text
-     - 图：一句话描述这张图 [[TOKEN_IMG_XXX]]
-     ```
 
-   * 绝对禁止将 `[[TOKEN_IMG_XXX]]` 转换为任何其他格式（如"链接："、URL等）；
-   * 绝对禁止修改Token编号（XXX部分）；
-   * 绝对禁止删除或省略Token标记；
-   * 绝对禁止将Token展开为完整图片路径；
+# Embedded fallback templates
+_EMBEDDED_TEMPLATES = {
+    "stage1": {
+        "academic": """你现在是一个"学术会议汇报 PPT 大纲生成助手（Stage 1）"。
 
-   * 每页最多保留一条"图："要点，如同一主题有两张重要图，应拆成两页，第二页标题在原标题后加"（续）"，例如：
-     `Slide 5：主要结果（二）（续）`。
+**输入**：一份由 MinerU 导出的论文 Markdown 文本片段。
 
-8. **表格与数值对比**：
-   * 不要生成 Markdown 表格或复制 HTML 表格；
-   * 对于表格或大量数值，只需用要点概括结论或对比，例如：
-     `- 对比多种架构在多个数据集上使用 CLR 与固定学习率的分类准确率。`
-
-9. **关于"拼接"的注意事项**：
-   * 下游可能会将多个片段的大纲拼接成整套 PPT，因此：
-     * 只有在当前输入明显包含论文开头信息（标题、作者、背景）时，才生成"标题页"和"整体结论"页；
-     * 对于只含中间章节的片段，避免重复生成通用的"研究背景""问题定义"幻灯片；
-     * 不必担心全局 Slide 编号唯一性，本次输出内部自洽即可。
-
-10. **其他约束**：
-    * 不要输出与大纲无关的解释性文字（如"下面是大纲"等）；
-    * 不要输出 Marp front-matter 或 `---` 分页，这一阶段只负责"标题 + 要点"的逻辑结构。
-
-【任务与输入】
-
-请阅读下面这份由 MinerU 导出的论文 Markdown 文本片段，自动识别其中的标题、作者、章节结构、图表信息等，按照上述角色设定生成一份适合{style}风格的 PPT 大纲片段。
+**目标**：基于当前这份 MinerU 文本片段，生成一份适合学术汇报风格的 PPT 草案大纲。
 
 【MinerU 输出开始】
-
 {content}
+【MinerU 输出结束】
 
+请开始生成大纲：""",
+
+        "popular": """你现在是一个"面向非专业听众的科普 PPT 大纲生成助手（Stage 1）"。
+
+**输入**：一份由 MinerU 导出的论文 Markdown 文本片段。
+
+**目标**：基于当前这份文本片段，生成一份"科普简介风"的 PPT 草案大纲。
+
+【MinerU 输出开始】
+{content}
+【MinerU 输出结束】
+
+请开始生成大纲：""",
+
+        "business": """你现在是一个"商业路演风 PPT 大纲生成助手（Stage 1）"。
+
+**输入**：一份由 MinerU 导出的论文 Markdown 文本片段。
+
+**目标**：基于当前这部分技术论文内容，生成一份商业路演风 PPT 大纲片段。
+
+【MinerU 输出开始】
+{content}
 【MinerU 输出结束】
 
 请开始生成大纲："""
+    },
+    "stage2": {
+        "academic": """你现在是一个"学术汇报风 Marp 格式 PPT 文稿生成助手（Stage 2）"。
 
-# Stage 2 Prompt Template
-# This template will be formatted with style and outline at runtime
-STAGE2_PROMPT = """你现在是一个"学术汇报风 Marp 格式 PPT 文稿生成助手（Stage 2）"。
+**输入**：一份已经由人类或 Stage 1 整体拼接并确认过的 PPT 大纲。
 
-**输入**：一份已经由人类或 Stage 1 整体拼接并确认过的 PPT 大纲，格式为：
-
-```text
-Slide 1：标题
-- 要点1
-- 要点2
-...
-
-Slide 2：标题
-- 要点1
-...
-```
-
-**目标**：根据这份大纲，生成一份可以直接用 Marp 渲染的 Markdown 文稿，风格为{style}。
-
-请严格遵守以下要求：
-
-1. **输出语言**：中文。
-
-2. **输出格式**：必须是合法的 Marp Markdown，包括：
-
-   * 顶部 front-matter：
-
-     ```markdown
-     ---
-     marp: true
-     theme: default
-     paginate: true
-     ---
-     ```
-
-   * 每一页 slide 之间，用单独一行的 `---` 分隔；
-
-   * 每一页结构为：
-
-     ```markdown
-     ## 页面标题
-     - 要点 1
-     - 要点 2
-     - 要点 3（可选）
-     - 要点 4（可选）
-     ```
-
-3. **大纲对应关系**：
-
-   * 必须保留每一页的顺序；
-   * 标题可以做轻微润色，使其更像幻灯片标题，但不能改变原意；
-   * 要点可以适度扩展、合并或拆分，但每页保持 3–5 条短句，最多不超过 5 条。
-
-4. **内容要求**：
-
-   * 不要整段复制论文原文，要用适合演示的、较口语化的学术表达；
-   * 每条要点控制在一行内，尽量不超过 40–50 个汉字；
-   * 如信息较多，优先拆成两条要点；
-   * 内容以信息为主，避免过多"主持式"语句；
-   * 如需过渡，可在某一页最后一条要点加一句简短过渡语，但不必每页都加。
-
-5. **图片Token处理规则**（基于大纲中的"图：... [[TOKEN_IMG_XXX]]"要点）：
-
-   * 若某条要点文本中包含 `[[TOKEN_IMG_XXX]]` 标记，则视为一条图片要点；
-
-   * **保持Token格式**：在最终输出中**必须保留 `[[TOKEN_IMG_XXX]]` 标记**，不要转换为任何其他格式；
-
-   * 处理方式：
-     1）在最终 slide 中保留完整要点和Token，例如：
-     `- 图：学习率范围测试的训练与验证曲线 [[TOKEN_IMG_001]]`
-
-   * **严格禁止**：
-     - 绝对不要移除或修改 `[[TOKEN_IMG_XXX]]` 标记；
-     - 绝对不要将Token转换为图片路径（如 `![](images/hash.jpg)`）；
-     - 绝对不要在普通要点中裸写Token或文件名；
-     - 绝对不要修改Token编号（XXX部分）；
-
-   * **重要说明**：Token 会在渲染阶段被自动还原为正确的图片链接，请保持Token原样不动；
-
-   * 每页最多插入一张图片，如大纲中同页有多张图，应拆成多页。
-
-6. **输出要求**：
-
-   * 只输出 Marp Markdown 内容，不要任何额外解释文字；
-   * 不要用代码块包裹整篇 Markdown。
-
-【任务与输入】
-
-请根据下面这份已经由人类确认过的 PPT 大纲，生成一份可以直接用 Marp 渲染的{style}风 Markdown 文稿。
+**目标**：根据这份大纲，生成一份可以直接用 Marp 渲染的 Markdown 文稿，风格为学术汇报风。
 
 【大纲】
+{outline}
 
+请开始生成 Marp Markdown：""",
+
+        "popular": """你现在是一个"面向非专业听众的科普 PPT 文稿生成助手（Stage 2）"。
+
+**输入**：一份已经由人类或 Stage 1 整体拼接并确认过的 PPT 大纲。
+
+**目标**：将这份大纲转换成一份可以直接用 Marp 渲染的 Markdown 文稿，风格为"科普简介风"。
+
+【大纲】
+{outline}
+
+请开始生成 Marp Markdown：""",
+
+        "business": """你现在是一个"面向投资人 / 业务决策者的商业路演 PPT 文稿生成助手（Stage 2）"。
+
+**输入**：一份已经由人类或 Stage 1 整体拼接并确认过的 PPT 大纲。
+
+**目标**：将这份大纲转换成一份可以直接用 Marp 渲染的 Markdown 文稿，风格为"商业路演风"。
+
+【大纲】
 {outline}
 
 请开始生成 Marp Markdown："""
+    }
+}
+
+# Backward compatibility
+STAGE1_PROMPT = _EMBEDDED_TEMPLATES["stage1"]["academic"]
+STAGE2_PROMPT = _EMBEDDED_TEMPLATES["stage2"]["academic"]
