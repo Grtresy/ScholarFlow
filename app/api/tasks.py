@@ -30,8 +30,8 @@ class CreateTaskRequest(BaseModel):
         default="academic",
         description="Presentation style: academic, popular, or business",
     )
-    max_chars: int = Field(default=6000, description="Maximum characters per chunk")
-    target_chunks: int = Field(default=6, description="Target number of chunks")
+    max_chars: int = Field(default=8000, description="Maximum characters per chunk")
+    target_chunks: int = Field(default=3, description="Target number of chunks")
     output_format: str = Field(default="pptx", description="Output format: pptx, pdf, or html")
     enable_human_review: bool = Field(default=True, description="Enable human review")
 
