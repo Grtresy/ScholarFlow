@@ -1,6 +1,7 @@
 import json
 from typing import List, Dict, Any, Optional
 
+DEFAULT_MAX_CHARS = 8000
 DEFAULT_MAX_CHARS = 60000
 
 
@@ -8,8 +9,9 @@ def split_markdown(md: str, max_chars: int = DEFAULT_MAX_CHARS) -> List[Dict[str
 
     lines = md.splitlines()
 
-    sections: List[Dict[str, str]] = []
-    current_title = "Intro"        
+    sections: List[Dict[str, Any]] = []
+    current_title = "Intro"
+    current_level = 0
     current_lines: List[str] = []
     pending_parent_title: Optional[str] = None  
 
@@ -36,7 +38,8 @@ def split_markdown(md: str, max_chars: int = DEFAULT_MAX_CHARS) -> List[Dict[str
 
         sections.append({
             "title": full_title,
-            "text": text
+            "text": text,
+            "level": current_level,
         })
 
         pending_parent_title = None
@@ -45,13 +48,15 @@ def split_markdown(md: str, max_chars: int = DEFAULT_MAX_CHARS) -> List[Dict[str
     for line in lines:
         stripped = line.lstrip()
 
-        if stripped.startswith("# "):   
+        if stripped.startswith("# "):
             flush_section()
             current_title = stripped.lstrip("# ").strip()
+            current_level = 1
 
-        elif stripped.startswith("## "):  
+        elif stripped.startswith("## "):
             flush_section()
             current_title = stripped.lstrip("#").strip()
+            current_level = 2
 
         else:
             current_lines.append(line)
@@ -61,92 +66,144 @@ def split_markdown(md: str, max_chars: int = DEFAULT_MAX_CHARS) -> List[Dict[str
     chunks: List[Dict[str, Any]] = []
     chunk_id = 1
 
-    for sec in sections:
-        text = (sec.get("text") or "").strip()
+    def format_section(title: str, text: str, level: int) -> str:
+        text = text.strip()
         if not text:
+            return ""
+        if title and title != "Intro" and level > 0:
+            prefix = "#" * level
+            return f"{prefix} {title}\n{text}"
+        return text
+
+    def add_chunk(title: str, text: str) -> None:
+        nonlocal chunk_id
+        text = text.strip()
+        if not text:
+            return
+        chunks.append({
+            "id": chunk_id,
+            "title": title or "Untitled",
+            "text": text,
+        })
+        chunk_id += 1
+
+    buffer_titles: List[str] = []
+    buffer_parts: List[str] = []
+    buffer_len = 0
+
+    def flush_buffer() -> None:
+        nonlocal buffer_titles, buffer_parts, buffer_len
+        if not buffer_parts:
+            return
+        merged_title = " / ".join([t for t in buffer_titles if t]).strip(" /")
+        merged_text = "\n\n".join(buffer_parts).strip()
+        add_chunk(merged_title or "Merged", merged_text)
+        buffer_titles = []
+        buffer_parts = []
+        buffer_len = 0
+
+    for sec in sections:
+        raw_text = (sec.get("text") or "").strip()
+        if not raw_text:
             continue
 
         title = sec.get("title") or "Untitled"
+        level = int(sec.get("level", 0) or 0)
+        section_text = format_section(title, raw_text, level)
+        if not section_text:
+            continue
 
-        if len(text) <= max_chars:
-            chunks.append({
-                "id": chunk_id,
-                "title": title,
-                "text": text,
-            })
-            chunk_id += 1
-        else:
-
-            paragraphs = text.split("\n\n")
-            buf: List[str] = []
-            buf_len = 0
-            part_idx = 1
-
-            for p in paragraphs:
-                p = p.strip()
-                if not p:
-                    continue
-                p_len = len(p)
-
-                if buf and buf_len + p_len + 2 > max_chars:
-                    chunks.append({
-                        "id": chunk_id,
-                        "title": f"{title} (part {part_idx})",
-                        "text": "\n\n".join(buf).strip(),
-                    })
-                    chunk_id += 1
-                    part_idx += 1
-                    buf = [p]
-                    buf_len = p_len
+        if len(raw_text) <= max_chars:
+            if buffer_parts:
+                prospective_len = buffer_len + 2 + len(section_text)
+                if prospective_len > max_chars:
+                    flush_buffer()
                 else:
-                    buf.append(p)
-                    buf_len += p_len
-            if buf:
-                chunks.append({
-                    "id": chunk_id,
-                    "title": f"{title} (part {part_idx})",
-                    "text": "\n\n".join(buf).strip(),
-                })
-                chunk_id += 1
+                    buffer_len = prospective_len
+            if not buffer_parts:
+                buffer_len = len(section_text)
+            buffer_parts.append(section_text)
+            buffer_titles.append(title)
+            continue
+
+        flush_buffer()
+
+        if title and title != "Intro" and level > 0:
+            header_len = len(f"{'#' * level} {title} (part 1)\n")
+            max_body_chars = max_chars - header_len if max_chars > header_len else max_chars
+        else:
+            max_body_chars = max_chars
+
+        paragraphs = raw_text.split("\n\n")
+        buf: List[str] = []
+        buf_len = 0
+        part_idx = 1
+
+        for p in paragraphs:
+            p = p.strip()
+            if not p:
+                continue
+            p_len = len(p)
+
+            if buf and buf_len + p_len + 2 > max_body_chars:
+                part_title = f"{title} (part {part_idx})"
+                part_text = "\n\n".join(buf).strip()
+                add_chunk(part_title, format_section(part_title, part_text, level))
+                part_idx += 1
+                buf = [p]
+                buf_len = p_len
+            else:
+                buf.append(p)
+                buf_len += p_len
+        if buf:
+            part_title = f"{title} (part {part_idx})"
+            part_text = "\n\n".join(buf).strip()
+            add_chunk(part_title, format_section(part_title, part_text, level))
+
+    flush_buffer()
 
     return chunks
 
 
 def merge_chunks(chunks: List[Dict[str, Any]], target_count: Optional[int]) -> List[Dict[str, Any]]:
-
     if not target_count or target_count <= 0:
         return chunks
     if len(chunks) <= target_count:
         return chunks
 
-    current = chunks
+    current = list(chunks)
+
     while len(current) > target_count:
-        new_chunks: List[Dict[str, Any]] = []
-        i = 0
+        best_idx = None
+        best_size = None
 
-        while i < len(current):
-            if i + 1 < len(current):
-                c1 = current[i]
-                c2 = current[i + 1]
+        for i in range(len(current) - 1):
+            c1 = current[i]
+            c2 = current[i + 1]
+            size = len((c1.get("text") or "")) + len((c2.get("text") or ""))
+            if best_size is None or size < best_size:
+                best_size = size
+                best_idx = i
 
-                merged_title = f"{c1.get('title', '')} / {c2.get('title', '')}".strip(" /")
-                merged_text = (
-                    (c1.get("text", "") or "").rstrip()
-                    + "\n\n"
-                    + (c2.get("text", "") or "").lstrip()
-                ).strip()
+        if best_idx is None:
+            break
 
-                new_chunks.append({
-                    "id": c1.get("id"),
-                    "title": merged_title or "Merged",
-                    "text": merged_text,
-                })
-                i += 2
-            else:
-                new_chunks.append(current[i])
-                i += 1
+        c1 = current[best_idx]
+        c2 = current[best_idx + 1]
+        merged_title = f"{c1.get('title', '')} / {c2.get('title', '')}".strip(" /")
+        merged_text = (
+            (c1.get("text", "") or "").rstrip()
+            + "\n\n"
+            + (c2.get("text", "") or "").lstrip()
+        ).strip()
 
-        current = new_chunks
+        merged_chunk = {
+            "id": c1.get("id"),
+            "title": merged_title or "Merged",
+            "text": merged_text,
+        }
+
+        current = current[:best_idx] + [merged_chunk] + current[best_idx + 2 :]
 
     for idx, c in enumerate(current, start=1):
         c["id"] = idx
@@ -160,7 +217,7 @@ def main(inputs: Dict[str, Any]) -> Dict[str, Any]:
     - 假设上游 MinerU 节点输出字段名为 'markdown'；
     - 可选输入：
         - 'max_chars': 控制单个 chunk 的最大长度（字符数）；
-        - 'target_chunks': 希望的 chunk 数量上限（例如 6）。
+        - 'target_chunks': 希望的 chunk 数量上限（例如 3）。
     - 输出 {"chunks": [...]}，供后续循环调用 LLM。
     """
     md = inputs.get("markdown", "") or ""
@@ -204,8 +261,8 @@ if __name__ == "__main__":
 
     with open(md_path, "r", encoding="utf-8") as f:
         markdown_text = f.read()
-    fine_chunks = split_markdown(markdown_text, max_chars=6000)
-    merged_chunks = merge_chunks(fine_chunks, target_count=6)
+    fine_chunks = split_markdown(markdown_text, max_chars=8000)
+    merged_chunks = merge_chunks(fine_chunks, target_count=3)
 
     result = {"chunks": merged_chunks}
     print(json.dumps(result, ensure_ascii=False, indent=2))

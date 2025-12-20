@@ -2,7 +2,7 @@
 
 Usage:
     # CLI mode - split markdown
-    python -m app.main --md-path path/to/file.md --max-chars 6000 --target-chunks 6
+    python -m app.main --md-path path/to/file.md --max-chars 8000 --target-chunks 3
 
     # API server mode
     python -m app.main serve --host 0.0.0.0 --port 8000

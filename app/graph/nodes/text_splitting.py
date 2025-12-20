@@ -23,8 +23,8 @@ def node_split_markdown(state: WorkflowState) -> Dict[str, Any]:
     """
     # Use tokenized_text to preserve image tokens during splitting
     markdown_text = state.get("tokenized_text", state.get("markdown_text", ""))
-    max_chars = state.get("max_chars", 60000)
-    target_chunks = state.get("target_chunks", 6)
+    max_chars = state.get("max_chars", 8000)
+    target_chunks = state.get("target_chunks", 3)
 
     if not markdown_text:
         return {
