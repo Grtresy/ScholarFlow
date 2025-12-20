@@ -113,7 +113,7 @@ export async function uploadPDF(file: File): Promise<UploadResponse> {
  * Create a new processing task
  */
 export async function createTask(request: CreateTaskRequest): Promise<TaskStatusResponse> {
-    const response = await fetch(`${API_BASE_URL}/api/tasks/tasks`, {
+    const response = await fetch(`${API_BASE_URL}/api/tasks`, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
@@ -133,7 +133,7 @@ export async function createTask(request: CreateTaskRequest): Promise<TaskStatus
  * Get task status
  */
 export async function getTaskStatus(taskId: string): Promise<TaskStatusResponse> {
-    const response = await fetch(`${API_BASE_URL}/api/tasks/tasks/${taskId}/status`);
+    const response = await fetch(`${API_BASE_URL}/api/tasks/${taskId}/status`);
 
     if (!response.ok) {
         const error = await response.json().catch(() => ({ detail: 'Failed to get status' }));
@@ -147,7 +147,7 @@ export async function getTaskStatus(taskId: string): Promise<TaskStatusResponse>
  * Get task result
  */
 export async function getTaskResult(taskId: string): Promise<TaskResultResponse> {
-    const response = await fetch(`${API_BASE_URL}/api/tasks/tasks/${taskId}/result`);
+    const response = await fetch(`${API_BASE_URL}/api/tasks/${taskId}/result`);
 
     if (!response.ok) {
         const error = await response.json().catch(() => ({ detail: 'Failed to get result' }));
@@ -164,7 +164,7 @@ export async function submitHumanFeedback(
     taskId: string,
     feedback: HumanFeedbackRequest
 ): Promise<{ status: string; message: string; task_id: string }> {
-    const response = await fetch(`${API_BASE_URL}/api/tasks/tasks/${taskId}/human-feedback`, {
+    const response = await fetch(`${API_BASE_URL}/api/tasks/${taskId}/human-feedback`, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',

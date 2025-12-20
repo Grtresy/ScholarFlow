@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { RefreshCw, ExternalLink, Download } from 'lucide-react';
 import { toast } from 'sonner';
+import { renderPreview as callRenderPreview } from '@/lib/api';
 
 interface MarpPreviewProps {
     markdown: string;
@@ -21,21 +22,8 @@ export function MarpPreview({ markdown, className = '', onRefresh }: MarpPreview
         setError(null);
 
         try {
-            // For now, we'll show a simple preview of the markdown
-            // In a real implementation, this would call the backend render endpoint
-            const response = await fetch('/api/render/preview', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({ markdown }),
-            });
-
-            if (!response.ok) {
-                throw new Error('渲染失败');
-            }
-
-            const data = await response.json();
+            // Call the backend render endpoint via API
+            const data = await callRenderPreview(markdown);
             setHtmlContent(data.html);
         } catch (err) {
             console.error('Render error:', err);

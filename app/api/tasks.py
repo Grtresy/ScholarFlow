@@ -17,7 +17,7 @@ from app.graph.workflow import resume_workflow, run_workflow
 from app.services.llm.prompts.prompt_templates import save_custom_templates
 from app.storage.checkpointer import get_checkpointer
 
-router = APIRouter(prefix="/api/tasks", tags=["tasks"])
+router = APIRouter(prefix="/api", tags=["tasks"])
 
 
 # ===== Request Models =====
