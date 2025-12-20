@@ -179,8 +179,8 @@ def build_arg_parser() -> argparse.ArgumentParser:
     p.add_argument("--pdf", default=str(Path("tests/inputs/第13周作业题.pdf").resolve()), help="Path to input PDF")
     p.add_argument("--style", default="academic", help="Presentation style: academic/popular/business")
     p.add_argument("--format", default="pptx", help="Output format: pptx/pdf/html")
-    p.add_argument("--max-chars", type=int, default=6000, help="Maximum characters per chunk")
-    p.add_argument("--target-chunks", type=int, default=6, help="Target number of chunks")
+    p.add_argument("--max-chars", type=int, default=8000, help="Maximum characters per chunk")
+    p.add_argument("--target-chunks", type=int, default=4, help="Target number of chunks")
     p.add_argument("--task-id", default=None, help="Optional custom task id")
     return p
 

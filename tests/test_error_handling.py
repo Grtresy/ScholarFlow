@@ -61,8 +61,8 @@ class TestErrorHandling:
             task_id="test_retry_integration",
             pdf_path="/nonexistent/path/file.pdf",  # This will fail
             presentation_style="academic",
-            max_chars=6000,
-            target_chunks=6,
+            max_chars=8000,
+            target_chunks=4,
             output_format="pptx",
             enable_human_review=False,
             max_retries=2,  # Low retry count for faster test
