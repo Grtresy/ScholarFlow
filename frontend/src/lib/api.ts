@@ -269,6 +269,22 @@ export async function saveMarkdownContent(
 }
 
 /**
+ * Save original version of presentation when entering editor
+ */
+export async function saveOriginalVersion(taskId: string): Promise<{ status: string; message: string; output_path: string; markdown_path: string }> {
+    const response = await fetch(`${API_BASE_URL}/api/save-original/${taskId}`, {
+        method: 'POST',
+    });
+
+    if (!response.ok) {
+        const error = await response.json().catch(() => ({ detail: 'Failed to save original version' }));
+        throw new Error(error.detail || 'Failed to save original version');
+    }
+
+    return response.json();
+}
+
+/**
  * Render markdown preview
  */
 export async function renderPreview(

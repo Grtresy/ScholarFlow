@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { downloadPresentation, triggerDownload, getMarkdownContent, TaskStatusResponse } from '@/lib/api';
+import { downloadPresentation, triggerDownload, getMarkdownContent, saveOriginalVersion, TaskStatusResponse } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { ResultEditor } from '@/components/ResultEditor';
@@ -18,6 +18,7 @@ export function ResultSection({ taskStatus }: ResultSectionProps) {
     const [markdown, setMarkdown] = useState('');
     const [showEditor, setShowEditor] = useState(false);
     const [loading, setLoading] = useState(true);
+    const [savingOriginal, setSavingOriginal] = useState(false);
 
     useEffect(() => {
         const fetchMarkdown = async () => {
@@ -58,6 +59,21 @@ export function ResultSection({ taskStatus }: ResultSectionProps) {
 
     const handleNewTask = () => {
         window.location.reload();
+    };
+
+    const handleShowEditor = async () => {
+        setSavingOriginal(true);
+        try {
+            await saveOriginalVersion(taskStatus.task_id);
+            toast.success('原始版本已保存');
+        } catch (error) {
+            console.error('Failed to save original version:', error);
+            // Continue to editor even if save fails, just log the error
+            toast.warning('保存原始版本失败，但仍可继续编辑');
+        } finally {
+            setSavingOriginal(false);
+        }
+        setShowEditor(true);
     };
 
     // Show editor if toggled
@@ -196,13 +212,23 @@ export function ResultSection({ taskStatus }: ResultSectionProps) {
             {/* Action buttons */}
             <div className="grid grid-cols-2 gap-3">
                 <Button
-                    onClick={() => setShowEditor(true)}
+                    onClick={handleShowEditor}
+                    disabled={savingOriginal}
                     variant="default"
                     size="lg"
                     className="flex-1"
                 >
-                    <Edit3 className="mr-2 h-4 w-4" />
-                    编辑演示文稿
+                    {savingOriginal ? (
+                        <>
+                            <div className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                            保存中...
+                        </>
+                    ) : (
+                        <>
+                            <Edit3 className="mr-2 h-4 w-4" />
+                            编辑演示文稿
+                        </>
+                    )}
                 </Button>
                 <Button
                     onClick={handleDownload}

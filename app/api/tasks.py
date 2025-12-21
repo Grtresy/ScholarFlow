@@ -426,7 +426,6 @@ async def get_markdown_content(task_id: str, stage: Optional[str] = None):
 async def save_markdown_content(
     task_id: str,
     request: SaveMarkdownRequest,
-    background_tasks: BackgroundTasks,
 ):
     """Save edited markdown content.
 
@@ -452,10 +451,6 @@ async def save_markdown_content(
     state["updated_at"] = datetime.now().isoformat()
     checkpointer.save_state(task_id, state, "markdown_updated")
 
-    # Trigger re-render if in completed state
-    if state.get("status") == TaskStatus.COMPLETED.value:
-        background_tasks.add_task(rerender_presentation, task_id, content)
-
     return {
         "status": "success",
         "message": "Markdown saved",
@@ -463,8 +458,3 @@ async def save_markdown_content(
     }
 
 
-async def rerender_presentation(task_id: str, markdown: str):
-    """Background task to re-render presentation with updated markdown."""
-    # TODO: Implement re-rendering logic
-    # This would involve calling the Marp renderer with the new markdown
-    pass
