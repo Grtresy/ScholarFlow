@@ -319,7 +319,9 @@ class ImageManager:
         self,
         tokenized_content: str,
         token_map: Dict[str, Dict[str, str]],
-        output_format: str = 'marp'
+        output_format: str = 'marp',
+        task_id: Optional[str] = None,
+        base_url: Optional[str] = None
     ) -> str:
         """
         Restore numbered tokens to proper markdown image format.
@@ -328,6 +330,8 @@ class ImageManager:
             tokenized_content: Content with [[TOKEN_IMG_XXX]] tokens
             token_map: Mapping from tokens to image information
             output_format: Output format ('marp', 'html', 'raw')
+            task_id: Task ID for generating full API URLs (optional)
+            base_url: Base URL for image API (e.g., 'http://localhost:8000')
 
         Returns:
             Markdown content with restored image links
@@ -343,11 +347,26 @@ class ImageManager:
                 alt_text = mapping['alt_text']
 
                 if output_format == 'marp':
-                    # Marp format: images/ prefix
-                    return f'![{alt_text}](images/{hash_value}.jpg)'
+                    # Marp format: use absolute URL if base_url provided, otherwise relative path
+                    if task_id and base_url:
+                        # Use absolute URL with base_url
+                        image_url = f'{base_url}/api/images/{task_id}/{hash_value}.jpg'
+                        return f'![{alt_text}]({image_url})'
+                    elif task_id:
+                        # Fallback to relative path if no base_url
+                        return f'![{alt_text}](/api/images/{task_id}/{hash_value}.jpg)'
+                    else:
+                        return f'![{alt_text}](images/{hash_value}.jpg)'
                 elif output_format == 'html':
-                    # HTML format: full path
-                    return f'<img src="images/{hash_value}.jpg" alt="{alt_text}" />'
+                    # HTML format: absolute URL if base_url provided
+                    if task_id and base_url:
+                        image_url = f'{base_url}/api/images/{task_id}/{hash_value}.jpg'
+                        return f'<img src="{image_url}" alt="{alt_text}" />'
+                    elif task_id:
+                        # Fallback to relative path
+                        return f'<img src="/api/images/{task_id}/{hash_value}.jpg" alt="{alt_text}" />'
+                    else:
+                        return f'<img src="images/{hash_value}.jpg" alt="{alt_text}" />'
                 else:
                     # Raw format for debugging
                     return f'[[{token}]]'
@@ -546,5 +565,5 @@ def create_image_manager(data_dir: str | Path = "data") -> ImageManager:
     Returns:
         ImageManager instance
     """
-    base_dir = Path(data_dir) / "intermediates"
+    base_dir = Path(data_dir) / "workflow" / "intermediate"
     return ImageManager(base_dir)

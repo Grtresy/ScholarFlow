@@ -19,12 +19,35 @@ All configuration is done via environment variables for flexibility.
 from __future__ import annotations
 
 import asyncio
+import json
+from pathlib import Path
 from typing import Any, Dict, List, Optional, AsyncGenerator
 
 from langchain_openai import ChatOpenAI
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import HumanMessage, SystemMessage
 
 from app.core.config import get_settings
+
+
+def load_global_system_prompt(prompt_key: str = "token_protection") -> Optional[str]:
+    """Load global system prompt from templates.json.
+
+    Args:
+        prompt_key: Key of the system prompt to load (default: "token_protection")
+
+    Returns:
+        System prompt string or None if not found
+    """
+    try:
+        templates_file = Path(__file__).resolve().parent / "prompts" / "templates.json"
+        if templates_file.exists():
+            with open(templates_file, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                global_prompts = data.get("global_system_prompts", {})
+                return global_prompts.get(prompt_key)
+    except Exception as e:
+        print(f"Warning: Failed to load global system prompt: {e}")
+    return None
 
 
 class LLMClient:
@@ -112,6 +135,7 @@ class LLMClient:
         max_tokens: int | None = None,
         temperature: float | None = None,
         stream: bool = False,
+        system_prompt: str | None = None,
     ) -> Dict[str, Any]:
         """Complete a prompt using LangChain (synchronous).
 
@@ -121,6 +145,7 @@ class LLMClient:
             max_tokens: Maximum tokens (defaults to configured max_tokens)
             temperature: Sampling temperature (defaults to configured temperature)
             stream: Whether to stream response
+            system_prompt: System prompt to use (defaults to token_protection from global config)
 
         Returns:
             Response dict with content and metadata
@@ -128,7 +153,17 @@ class LLMClient:
         # Note: LangChain's ChatOpenAI doesn't support stream in this interface
         # Use astream for streaming
         try:
-            response = self._client.invoke([HumanMessage(content=prompt)])
+            # Load system prompt if not provided
+            if system_prompt is None:
+                system_prompt = load_global_system_prompt()
+
+            # Build messages list
+            messages = []
+            if system_prompt:
+                messages.append(SystemMessage(content=system_prompt))
+            messages.append(HumanMessage(content=prompt))
+
+            response = self._client.invoke(messages)
 
             return {
                 "content": response.content,
@@ -146,6 +181,7 @@ class LLMClient:
         model: str | None = None,
         max_tokens: int | None = None,
         temperature: float | None = None,
+        system_prompt: str | None = None,
     ) -> Dict[str, Any]:
         """Complete a prompt using LangChain (asynchronous).
 
@@ -154,12 +190,23 @@ class LLMClient:
             model: Model name (defaults to configured model)
             max_tokens: Maximum tokens (defaults to configured max_tokens)
             temperature: Sampling temperature (defaults to configured temperature)
+            system_prompt: System prompt to use (defaults to token_protection from global config)
 
         Returns:
             Response dict with content and metadata
         """
         try:
-            response = await self._client.ainvoke([HumanMessage(content=prompt)])
+            # Load system prompt if not provided
+            if system_prompt is None:
+                system_prompt = load_global_system_prompt()
+
+            # Build messages list
+            messages = []
+            if system_prompt:
+                messages.append(SystemMessage(content=system_prompt))
+            messages.append(HumanMessage(content=prompt))
+
+            response = await self._client.ainvoke(messages)
 
             return {
                 "content": response.content,

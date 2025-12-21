@@ -72,6 +72,8 @@ async def node_stage2_process(state: WorkflowState) -> Dict[str, Any]:
             "status": TaskStatus.RENDERING.value,
             "marp_markdown": marp_markdown,
             "marp_markdown_path": str(marp_path),
+            "image_token_map": state.get("image_token_map"),  # 明确传递image_token_map
+            "token_count": len(state.get("image_token_map", {})),
             "current_step": "Stage 2完成，开始渲染",
             "progress_percentage": 80.0,
             "updated_at": datetime.now().isoformat(),

@@ -11,7 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.services.parser.image_manager import ImageManager, create_image_manager
 from app.core.config import get_settings
 
-router = APIRouter(prefix="/api/images", tags=["images"])
+router = APIRouter(tags=["images"])
 
 # Initialize image manager
 settings = get_settings()

@@ -10,9 +10,10 @@ interface MarpPreviewProps {
     markdown: string;
     className?: string;
     onRefresh?: () => void;
+    taskId?: string;
 }
 
-export function MarpPreview({ markdown, className = '', onRefresh }: MarpPreviewProps) {
+export function MarpPreview({ markdown, className = '', onRefresh, taskId }: MarpPreviewProps) {
     const [htmlContent, setHtmlContent] = useState<string>('');
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -23,7 +24,7 @@ export function MarpPreview({ markdown, className = '', onRefresh }: MarpPreview
 
         try {
             // Call the backend render endpoint via API
-            const data = await callRenderPreview(markdown);
+            const data = await callRenderPreview(markdown, taskId);
             setHtmlContent(data.html);
         } catch (err) {
             console.error('Render error:', err);

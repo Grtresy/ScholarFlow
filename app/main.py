@@ -192,6 +192,7 @@ def create_app():
     from app.api.upload import router as upload_router
     from app.api.prompts import router as prompts_router
     from app.api.render import router as render_router
+    from app.api.images import router as images_router
 
     app = FastAPI(
         title="ScholarFlow API",
@@ -214,6 +215,7 @@ def create_app():
     app.include_router(upload_router)
     app.include_router(prompts_router)
     app.include_router(render_router)
+    app.include_router(images_router, prefix="/api/images")
 
     # Health check endpoint
     @app.get("/health")

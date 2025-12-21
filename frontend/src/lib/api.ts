@@ -271,13 +271,21 @@ export async function saveMarkdownContent(
 /**
  * Render markdown preview
  */
-export async function renderPreview(markdown: string): Promise<{ html: string }> {
+export async function renderPreview(
+    markdown: string,
+    taskId?: string,
+    baseUrl?: string
+): Promise<{ html: string }> {
     const response = await fetch(`${API_BASE_URL}/api/render/preview`, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ markdown }),
+        body: JSON.stringify({
+            markdown,
+            task_id: taskId,
+            base_url: baseUrl,
+        }),
     });
 
     if (!response.ok) {
