@@ -133,7 +133,7 @@ export function MarpPreview({ markdown, className = '', onRefresh, taskId }: Mar
                         srcDoc={htmlContent}
                         className="w-full h-full border-0"
                         title="Marp Preview"
-                        sandbox="allow-same-origin"
+                        sandbox="allow-same-origin allow-scripts"
                     />
                 )}
 

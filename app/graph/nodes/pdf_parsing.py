@@ -31,6 +31,22 @@ def node_parse_pdf(state: WorkflowState) -> Dict[str, Any]:
     output_dir.mkdir(parents=True, exist_ok=True)
 
     try:
+        # Send start notification via WebSocket
+        try:
+            from app.api.websocket import send_render_progress
+            import asyncio
+
+            asyncio.create_task(
+                send_render_progress(
+                    task_id=task_id,
+                    stage="extracting",
+                    percentage=5.0,
+                    output_format="markdown"
+                )
+            )
+        except Exception as e:
+            print(f"⚠️  WebSocket render progress error: {e}")
+
         # Initialize MinerU client
         client = MinerUClient()
 
@@ -69,6 +85,22 @@ def node_parse_pdf(state: WorkflowState) -> Dict[str, Any]:
 
         execution_log = state.get("execution_log", [])
         execution_log.append(log_entry)
+
+        # Send completion notification via WebSocket
+        try:
+            from app.api.websocket import send_render_progress
+            import asyncio
+
+            asyncio.create_task(
+                send_render_progress(
+                    task_id=task_id,
+                    stage="extracting",
+                    percentage=15.0,
+                    output_format="markdown"
+                )
+            )
+        except Exception as e:
+            print(f"⚠️  WebSocket render progress error: {e}")
 
         return {
             "status": TaskStatus.SPLITTING.value,

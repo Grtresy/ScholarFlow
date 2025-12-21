@@ -35,6 +35,22 @@ async def node_stage2_process(state: WorkflowState) -> Dict[str, Any]:
         }
 
     try:
+        # Send start notification via WebSocket
+        try:
+            from app.api.websocket import send_render_progress
+            import asyncio
+
+            asyncio.create_task(
+                send_render_progress(
+                    task_id=task_id,
+                    stage="parsing",
+                    percentage=5.0,
+                    output_format="pptx"
+                )
+            )
+        except Exception as e:
+            print(f"⚠️  WebSocket render progress error: {e}")
+
         # Format prompt with dynamic template system
         prompt = format_stage2_prompt(
             style=style,
@@ -52,6 +68,22 @@ async def node_stage2_process(state: WorkflowState) -> Dict[str, Any]:
 
         marp_markdown = response.get("content", "")
 
+        # Send progress update via WebSocket
+        try:
+            from app.api.websocket import send_render_progress
+            import asyncio
+
+            asyncio.create_task(
+                send_render_progress(
+                    task_id=task_id,
+                    stage="parsing",
+                    percentage=30.0,
+                    output_format="pptx"
+                )
+            )
+        except Exception as e:
+            print(f"⚠️  WebSocket render progress error: {e}")
+
         # Save Marp markdown
         output_dir = Path("data/workflow/intermediate") / task_id
         output_dir.mkdir(parents=True, exist_ok=True)
@@ -67,6 +99,22 @@ async def node_stage2_process(state: WorkflowState) -> Dict[str, Any]:
         }
         execution_log = state.get("execution_log", [])
         execution_log.append(log_entry)
+
+        # Send completion notification via WebSocket
+        try:
+            from app.api.websocket import send_render_progress
+            import asyncio
+
+            asyncio.create_task(
+                send_render_progress(
+                    task_id=task_id,
+                    stage="rendering",
+                    percentage=80.0,
+                    output_format="pptx"
+                )
+            )
+        except Exception as e:
+            print(f"⚠️  WebSocket render progress error: {e}")
 
         return {
             "status": TaskStatus.RENDERING.value,

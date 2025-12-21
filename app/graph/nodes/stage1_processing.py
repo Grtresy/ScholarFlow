@@ -86,6 +86,26 @@ async def node_stage1_process(state: WorkflowState) -> Dict[str, Any]:
         # Calculate progress (20% + 30% for stage1)
         progress = 20.0 + (30.0 * (current_index + 1) / len(chunks))
 
+        # Send chunk progress via WebSocket
+        try:
+            from app.api.websocket import send_chunk_progress
+            import asyncio
+
+            # Get current chunk content preview (first 200 chars)
+            chunk_preview = chunk_text[:200] + "..." if len(chunk_text) > 200 else chunk_text
+
+            asyncio.create_task(
+                send_chunk_progress(
+                    task_id=task_id,
+                    chunk_index=current_index,
+                    total_chunks=len(chunks),
+                    completed_chunks=current_index + 1,
+                    current_chunk_content=chunk_preview
+                )
+            )
+        except Exception as e:
+            print(f"⚠️  WebSocket chunk progress error: {e}")
+
         return {
             "current_chunk_index": current_index + 1,
             "stage1_results": stage1_results,

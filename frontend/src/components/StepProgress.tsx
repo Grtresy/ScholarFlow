@@ -1,11 +1,12 @@
 'use client';
 
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { Progress } from '@/components/ui/progress';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { CheckCircle, Circle, Clock } from 'lucide-react';
+import { CheckCircle, Circle, Clock, FileText, Image, Cpu } from 'lucide-react';
 import { TaskStatusResponse } from '@/lib/api';
+import { WorkflowWebSocketClient, ConnectionStatus } from '@/lib/websocket';
 
 interface StepProgressProps {
     status: TaskStatusResponse;
@@ -17,6 +18,21 @@ interface WorkflowStep {
     status: 'completed' | 'current' | 'pending' | 'error';
     progress?: number;
     details?: string;
+}
+
+interface ChunkProgressInfo {
+    chunk_index: number;
+    total_chunks: number;
+    completed_chunks: number;
+    current_chunk_content?: string;
+    timestamp: number;
+}
+
+interface RenderProgressInfo {
+    stage: string;
+    percentage: number;
+    output_format: string;
+    timestamp: number;
 }
 
 const STATUS_LABELS: Record<string, string> = {
@@ -35,6 +51,47 @@ const STATUS_LABELS: Record<string, string> = {
 };
 
 export function StepProgress({ status }: StepProgressProps) {
+    const [chunkProgress, setChunkProgress] = useState<ChunkProgressInfo | null>(null);
+    const [renderProgress, setRenderProgress] = useState<RenderProgressInfo | null>(null);
+    const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('disconnected');
+
+    // WebSocket connection for real-time progress
+    useEffect(() => {
+        if (!status.task_id) return;
+
+        const wsClient = new WorkflowWebSocketClient(status.task_id);
+
+        // Connection status handler
+        wsClient.onStatusChange((status) => {
+            setConnectionStatus(status);
+        });
+
+        // Chunk progress handler
+        wsClient.onChunkProgress((data) => {
+            console.log('[StepProgress] Chunk progress:', data);
+            setChunkProgress({
+                ...data,
+                timestamp: Date.now()
+            });
+        });
+
+        // Render progress handler
+        wsClient.onRenderProgress((data) => {
+            console.log('[StepProgress] Render progress:', data);
+            setRenderProgress({
+                ...data,
+                timestamp: Date.now()
+            });
+        });
+
+        // Connect
+        wsClient.connect();
+
+        return () => {
+            wsClient.disconnect();
+        };
+    }, [status.task_id]);
+
     // Build workflow steps based on current status
     const buildWorkflowSteps = (): WorkflowStep[] => {
         const steps: WorkflowStep[] = [
@@ -162,6 +219,76 @@ export function StepProgress({ status }: StepProgressProps) {
                     )}
                 </CardContent>
             </Card>
+
+            {/* Real-time Progress Details */}
+            {(chunkProgress || renderProgress) && (
+                <Card className="border-blue-200 dark:border-blue-900">
+                    <CardHeader>
+                        <CardTitle className="text-lg flex items-center gap-2">
+                            <Cpu className="w-5 h-5 text-blue-500" />
+                            实时进度
+                            {connectionStatus === 'connected' && (
+                                <span className="text-xs bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300 px-2 py-1 rounded-full">
+                                    实时
+                                </span>
+                            )}
+                        </CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                        {/* Chunk Progress */}
+                        {chunkProgress && (
+                            <div className="space-y-2">
+                                <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-2">
+                                        <FileText className="w-4 h-4 text-blue-500" />
+                                        <span className="text-sm font-medium">Stage 1: 处理Chunk</span>
+                                    </div>
+                                    <span className="text-xs text-zinc-500">
+                                        {chunkProgress.completed_chunks}/{chunkProgress.total_chunks}
+                                    </span>
+                                </div>
+                                <Progress
+                                    value={(chunkProgress.completed_chunks / chunkProgress.total_chunks) * 100}
+                                    className="h-2"
+                                />
+                                {chunkProgress.current_chunk_content && (
+                                    <div className="bg-zinc-50 dark:bg-zinc-900 p-2 rounded text-xs text-zinc-600 dark:text-zinc-400">
+                                        <span className="font-medium">当前chunk预览：</span>
+                                        <span className="block mt-1 truncate">
+                                            {chunkProgress.current_chunk_content}
+                                        </span>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
+                        {/* Render Progress */}
+                        {renderProgress && (
+                            <div className="space-y-2">
+                                <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-2">
+                                        <Image className="w-4 h-4 text-purple-500" />
+                                        <span className="text-sm font-medium">
+                                            渲染: {renderProgress.stage}
+                                        </span>
+                                    </div>
+                                    <span className="text-xs text-zinc-500">
+                                        {Math.round(renderProgress.percentage)}%
+                                    </span>
+                                </div>
+                                <Progress
+                                    value={renderProgress.percentage}
+                                    className="h-2"
+                                />
+                                <div className="flex items-center gap-2 text-xs text-zinc-500">
+                                    <span>输出格式:</span>
+                                    <span className="font-medium">{renderProgress.output_format.toUpperCase()}</span>
+                                </div>
+                            </div>
+                        )}
+                    </CardContent>
+                </Card>
+            )}
 
             {/* Step Timeline */}
             <Card>

@@ -1,14 +1,15 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { submitHumanFeedback, TaskStatusResponse } from '@/lib/api';
+import { WorkflowWebSocketClient, ConnectionStatus } from '@/lib/websocket';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { MarkdownPreview } from '@/components/MarkdownPreview';
 import { toast } from 'sonner';
-import { FileText, Eye } from 'lucide-react';
+import { FileText, Eye, Wifi, WifiOff } from 'lucide-react';
 
 interface ReviewSectionProps {
     taskStatus: TaskStatusResponse;
@@ -21,6 +22,35 @@ export function ReviewSection({ taskStatus, onReviewed }: ReviewSectionProps) {
     const [submitted, setSubmitted] = useState(false);
     const [selectedAction, setSelectedAction] = useState<'approve' | 'regenerate' | 'abort'>('approve');
     const [viewMode, setViewMode] = useState<'raw' | 'rendered'>('rendered');
+    const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('disconnected');
+
+    // WebSocket connection for real-time review updates
+    useEffect(() => {
+        if (!taskStatus.task_id) return;
+
+        const wsClient = new WorkflowWebSocketClient(taskStatus.task_id);
+
+        // Connection status handler
+        wsClient.onStatusChange((status) => {
+            setConnectionStatus(status);
+        });
+
+        // Review required handler
+        wsClient.onReviewRequired((data) => {
+            console.log('[ReviewSection] Review update received:', data);
+            // Show notification if review points updated
+            if (data.review_points && data.review_points.length > 0) {
+                toast.info(`审核要点已更新 (${data.review_points.length} 项)`);
+            }
+        });
+
+        // Connect
+        wsClient.connect();
+
+        return () => {
+            wsClient.disconnect();
+        };
+    }, [taskStatus.task_id]);
 
     const handleSubmit = async () => {
         if (submitted) return; // Prevent duplicate submissions
@@ -193,7 +223,28 @@ export function ReviewSection({ taskStatus, onReviewed }: ReviewSectionProps) {
             {/* Task info */}
             <Card className="bg-zinc-50 dark:bg-zinc-900">
                 <CardHeader>
-                    <CardTitle className="text-sm">任务信息</CardTitle>
+                    <CardTitle className="text-sm flex items-center justify-between">
+                        <span>任务信息</span>
+                        {/* WebSocket connection status */}
+                        <div className="flex items-center gap-2">
+                            {connectionStatus === 'connected' ? (
+                                <>
+                                    <Wifi className="w-4 h-4 text-green-500" />
+                                    <span className="text-xs text-green-600 dark:text-green-400">实时同步</span>
+                                </>
+                            ) : connectionStatus === 'error' ? (
+                                <>
+                                    <WifiOff className="w-4 h-4 text-red-500" />
+                                    <span className="text-xs text-red-600 dark:text-red-400">连接错误</span>
+                                </>
+                            ) : (
+                                <>
+                                    <WifiOff className="w-4 h-4 text-zinc-400" />
+                                    <span className="text-xs text-zinc-500">离线</span>
+                                </>
+                            )}
+                        </div>
+                    </CardTitle>
                 </CardHeader>
                 <CardContent className="grid grid-cols-2 gap-4 text-sm">
                     <div>

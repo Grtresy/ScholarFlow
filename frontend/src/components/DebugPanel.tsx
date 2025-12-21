@@ -1,13 +1,14 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Copy, Search, ChevronDown, ChevronRight, Clock, HardDrive, Network } from 'lucide-react';
+import { X, Copy, Search, ChevronDown, ChevronRight, Clock, HardDrive, Network, Wifi } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Input } from '@/components/ui/input';
 import { TaskStatusResponse } from '@/lib/api';
+import { WorkflowWebSocketClient, ConnectionStatus } from '@/lib/websocket';
 import ReactMarkdown from 'react-markdown';
 
 interface DebugPanelProps {
@@ -28,6 +29,32 @@ export function DebugPanel({ isOpen, onToggle, taskStatus }: DebugPanelProps) {
     const [searchTerm, setSearchTerm] = useState('');
     const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(['workflowState']));
     const [activeTab, setActiveTab] = useState('state');
+    const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('disconnected');
+    const [websocketMessages, setWebsocketMessages] = useState<Array<{type: string, data: any, timestamp: number}>>([]);
+
+    // WebSocket connection for monitoring
+    useEffect(() => {
+        if (!taskStatus?.task_id) return;
+
+        const wsClient = new WorkflowWebSocketClient(taskStatus.task_id);
+
+        // Connection status handler
+        wsClient.onStatusChange((status) => {
+            setConnectionStatus(status);
+        });
+
+        // Message handler
+        wsClient.on('message', (message) => {
+            setWebsocketMessages(prev => [...prev.slice(-99), message]); // Keep last 100 messages
+        });
+
+        // Connect
+        wsClient.connect();
+
+        return () => {
+            wsClient.disconnect();
+        };
+    }, [taskStatus?.task_id]);
 
     // Mock data for execution time and memory (in real implementation, these would come from the backend)
     const executionStats = {
@@ -122,10 +149,11 @@ export function DebugPanel({ isOpen, onToggle, taskStatus }: DebugPanelProps) {
                         {/* Content */}
                         <div className="flex-1 overflow-auto p-4">
                             <Tabs value={activeTab} onValueChange={setActiveTab} className="h-full">
-                                <TabsList className="grid w-full grid-cols-4">
+                                <TabsList className="grid w-full grid-cols-5">
                                     <TabsTrigger value="state">状态</TabsTrigger>
                                     <TabsTrigger value="performance">性能</TabsTrigger>
                                     <TabsTrigger value="network">网络</TabsTrigger>
+                                    <TabsTrigger value="websocket">WebSocket</TabsTrigger>
                                     <TabsTrigger value="logs">日志</TabsTrigger>
                                 </TabsList>
 
@@ -344,6 +372,79 @@ export function DebugPanel({ isOpen, onToggle, taskStatus }: DebugPanelProps) {
                                                         </div>
                                                     </div>
                                                 ))}
+                                            </div>
+                                        </CardContent>
+                                    </Card>
+                                </TabsContent>
+
+                                {/* WebSocket Tab */}
+                                <TabsContent value="websocket" className="space-y-4 mt-4">
+                                    {/* Connection Status */}
+                                    <Card>
+                                        <CardHeader>
+                                            <CardTitle className="text-sm flex items-center gap-2">
+                                                <Wifi className="h-4 w-4" />
+                                                连接状态
+                                            </CardTitle>
+                                        </CardHeader>
+                                        <CardContent>
+                                            <div className="space-y-2">
+                                                <div className="flex items-center justify-between">
+                                                    <span className="text-xs text-zinc-500">状态</span>
+                                                    <span className={`text-xs font-medium px-2 py-1 rounded ${
+                                                        connectionStatus === 'connected'
+                                                            ? 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300'
+                                                            : connectionStatus === 'error'
+                                                            ? 'bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300'
+                                                            : 'bg-zinc-100 text-zinc-700 dark:bg-zinc-900 dark:text-zinc-300'
+                                                    }`}>
+                                                        {connectionStatus === 'connected' ? '已连接' :
+                                                         connectionStatus === 'connecting' ? '连接中' :
+                                                         connectionStatus === 'reconnecting' ? '重连中' :
+                                                         connectionStatus === 'error' ? '错误' :
+                                                         '已断开'}
+                                                    </span>
+                                                </div>
+                                                <div className="flex items-center justify-between">
+                                                    <span className="text-xs text-zinc-500">任务ID</span>
+                                                    <span className="text-xs font-mono">{taskStatus?.task_id || 'N/A'}</span>
+                                                </div>
+                                                <div className="flex items-center justify-between">
+                                                    <span className="text-xs text-zinc-500">消息数量</span>
+                                                    <span className="text-xs font-medium">{websocketMessages.length}</span>
+                                                </div>
+                                            </div>
+                                        </CardContent>
+                                    </Card>
+
+                                    {/* WebSocket Messages */}
+                                    <Card>
+                                        <CardHeader>
+                                            <CardTitle className="text-sm">实时消息</CardTitle>
+                                        </CardHeader>
+                                        <CardContent>
+                                            <div className="space-y-2 max-h-80 overflow-auto">
+                                                {websocketMessages.length > 0 ? (
+                                                    websocketMessages.slice().reverse().map((msg, index) => (
+                                                        <div key={index} className="text-xs bg-zinc-50 dark:bg-zinc-900 p-3 rounded">
+                                                            <div className="flex justify-between items-start mb-1">
+                                                                <span className="font-medium text-blue-600 dark:text-blue-400">
+                                                                    {msg.type}
+                                                                </span>
+                                                                <span className="text-zinc-500">
+                                                                    {new Date(msg.timestamp).toLocaleTimeString()}
+                                                                </span>
+                                                            </div>
+                                                            <pre className="text-zinc-700 dark:text-zinc-300 whitespace-pre-wrap overflow-x-auto">
+                                                                {JSON.stringify(msg.data, null, 2)}
+                                                            </pre>
+                                                        </div>
+                                                    ))
+                                                ) : (
+                                                    <div className="text-xs text-zinc-500 text-center py-4">
+                                                        暂无WebSocket消息
+                                                    </div>
+                                                )}
                                             </div>
                                         </CardContent>
                                     </Card>

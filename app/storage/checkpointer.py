@@ -145,6 +145,35 @@ class WorkflowCheckpointer:
         # Save to custom storage for quick access
         self._save_to_json(task_id, state)
 
+        # Trigger WebSocket notification (non-blocking)
+        try:
+            import asyncio
+            from app.api.websocket import send_status_update
+
+            # Create a new event loop for the callback if needed
+            try:
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    # If we're already in an async context, schedule the task
+                    asyncio.create_task(
+                        send_status_update(
+                            task_id=task_id,
+                            status=TaskStatus(state.get("status", TaskStatus.PENDING.value)),
+                            progress=state.get("progress_percentage", 0.0),
+                            current_step=state.get("current_step", ""),
+                            updated_fields=["status", "progress_percentage", "current_step"]
+                        )
+                    )
+                else:
+                    # If no event loop is running, we can't send the notification
+                    pass
+            except RuntimeError:
+                # No event loop exists
+                pass
+        except Exception as e:
+            # Silently ignore WebSocket errors to avoid breaking the main workflow
+            print(f"⚠️  WebSocket notification error: {e}")
+
     def load_state(self, task_id: str) -> Optional[WorkflowState]:
         """Load workflow state by task ID.
 
@@ -239,7 +268,14 @@ class WorkflowCheckpointer:
             with open(task_file, "r", encoding="utf-8") as f:
                 data = json.load(f)
             return WorkflowState(**data)
-        except (json.JSONDecodeError, TypeError):
+        except json.JSONDecodeError as e:
+            print(f"❌ JSON decode error in {task_file}: {e}")
+            return None
+        except TypeError as e:
+            print(f"❌ Type error in {task_file}: {e}")
+            return None
+        except Exception as e:
+            print(f"❌ Unexpected error loading {task_file}: {e}")
             return None
 
 

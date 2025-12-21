@@ -3,15 +3,27 @@
  */
 
 const getApiBaseUrl = () => {
-    if (process.env.NEXT_PUBLIC_API_URL) return process.env.NEXT_PUBLIC_API_URL;
+    // 开发环境直接指向后端服务
+    if (process.env.NODE_ENV === 'development') {
+        return 'http://localhost:8000';
+    }
+
+    // 生产环境使用相对路径或环境变量
     if (typeof window !== 'undefined') {
         const { protocol, hostname } = window.location;
-        return `${protocol}//${hostname}:8000`;
+        const port = process.env.NEXT_PUBLIC_API_PORT || '8000';
+        return `${protocol}//${hostname}:${port}`;
     }
+
     return 'http://localhost:8000';
 };
 
 const API_BASE_URL = getApiBaseUrl();
+
+// 开发环境下的调试信息
+if (typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
+    console.log('[API] 使用的API基础URL:', API_BASE_URL);
+}
 
 // ===== Type Definitions =====
 
@@ -131,6 +143,10 @@ export async function createTask(request: CreateTaskRequest): Promise<TaskStatus
 
 /**
  * Get task status
+ *
+ * This function serves as a fallback polling mechanism when WebSocket connection fails.
+ * It's used by the WorkflowWebSocketClient to maintain task status updates even
+ * when real-time connection is unavailable.
  */
 export async function getTaskStatus(taskId: string): Promise<TaskStatusResponse> {
     const response = await fetch(`${API_BASE_URL}/api/tasks/${taskId}/status`);
