@@ -28,6 +28,7 @@ async def node_stage1_process(state: WorkflowState) -> Dict[str, Any]:
     stage1_results = state.get("stage1_results", [])
     style = state.get("presentation_style", "academic")
     task_id = state.get("task_id")
+    user_modifications = state.get("user_modifications", "")
 
     # Check if all chunks processed
     if current_index >= len(chunks):
@@ -49,7 +50,8 @@ async def node_stage1_process(state: WorkflowState) -> Dict[str, Any]:
         prompt = format_stage1_prompt(
             style=style,
             content=chunk_text,
-            task_id=task_id
+            task_id=task_id,
+            user_modifications=user_modifications
         )
 
         # Call LLM asynchronously
@@ -58,6 +60,8 @@ async def node_stage1_process(state: WorkflowState) -> Dict[str, Any]:
             prompt=prompt,
             max_tokens=4000,
             temperature=0.7,
+            task_id=task_id,
+            stage="stage1",
         )
 
         outline = response.get("content", "")

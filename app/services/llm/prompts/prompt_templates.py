@@ -202,14 +202,14 @@ def get_stage2_template(style: str = "academic", task_id: Optional[str] = None) 
     return _template_manager.get_template(task_id, "stage2", style)
 
 
-def format_stage1_prompt(style: str, content: str, task_id: Optional[str] = None) -> str:
-    """Format Stage 1 prompt with content."""
-    return _template_manager.format_prompt(task_id, "stage1", style, content=content)
+def format_stage1_prompt(style: str, content: str, task_id: Optional[str] = None, user_modifications: str = "") -> str:
+    """Format Stage 1 prompt with content and optional user modifications."""
+    return _template_manager.format_prompt(task_id, "stage1", style, content=content, user_modifications=user_modifications)
 
 
-def format_stage2_prompt(style: str, outline: str, task_id: Optional[str] = None) -> str:
-    """Format Stage 2 prompt with outline."""
-    return _template_manager.format_prompt(task_id, "stage2", style, outline=outline)
+def format_stage2_prompt(style: str, outline: str, task_id: Optional[str] = None, user_modifications: str = "") -> str:
+    """Format Stage 2 prompt with outline and optional user modifications."""
+    return _template_manager.format_prompt(task_id, "stage2", style, outline=outline, user_modifications=user_modifications)
 
 
 def save_custom_templates(task_id: str, stage1_template: Optional[str] = None,
@@ -223,81 +223,81 @@ def get_available_styles() -> list[str]:
     return _template_manager.get_available_styles()
 
 
-# Embedded fallback templates
-_EMBEDDED_TEMPLATES = {
-    "stage1": {
-        "academic": """你现在是一个"学术会议汇报 PPT 大纲生成助手（Stage 1）"。
+# # Embedded fallback templates
+# _EMBEDDED_TEMPLATES = {
+#     "stage1": {
+#         "academic": """你现在是一个"学术会议汇报 PPT 大纲生成助手（Stage 1）"。
 
-**输入**：一份由 MinerU 导出的论文 Markdown 文本片段。
+# **输入**：一份由 MinerU 导出的论文 Markdown 文本片段。
 
-**目标**：基于当前这份 MinerU 文本片段，生成一份适合学术汇报风格的 PPT 草案大纲。
+# **目标**：基于当前这份 MinerU 文本片段，生成一份适合学术汇报风格的 PPT 草案大纲。
 
-【MinerU 输出开始】
-{content}
-【MinerU 输出结束】
+# 【MinerU 输出开始】
+# {content}
+# 【MinerU 输出结束】
 
-请开始生成大纲：""",
+# 请开始生成大纲：""",
 
-        "popular": """你现在是一个"面向非专业听众的科普 PPT 大纲生成助手（Stage 1）"。
+#         "popular": """你现在是一个"面向非专业听众的科普 PPT 大纲生成助手（Stage 1）"。
 
-**输入**：一份由 MinerU 导出的论文 Markdown 文本片段。
+# **输入**：一份由 MinerU 导出的论文 Markdown 文本片段。
 
-**目标**：基于当前这份文本片段，生成一份"科普简介风"的 PPT 草案大纲。
+# **目标**：基于当前这份文本片段，生成一份"科普简介风"的 PPT 草案大纲。
 
-【MinerU 输出开始】
-{content}
-【MinerU 输出结束】
+# 【MinerU 输出开始】
+# {content}
+# 【MinerU 输出结束】
 
-请开始生成大纲：""",
+# 请开始生成大纲：""",
 
-        "business": """你现在是一个"商业路演风 PPT 大纲生成助手（Stage 1）"。
+#         "business": """你现在是一个"商业路演风 PPT 大纲生成助手（Stage 1）"。
 
-**输入**：一份由 MinerU 导出的论文 Markdown 文本片段。
+# **输入**：一份由 MinerU 导出的论文 Markdown 文本片段。
 
-**目标**：基于当前这部分技术论文内容，生成一份商业路演风 PPT 大纲片段。
+# **目标**：基于当前这部分技术论文内容，生成一份商业路演风 PPT 大纲片段。
 
-【MinerU 输出开始】
-{content}
-【MinerU 输出结束】
+# 【MinerU 输出开始】
+# {content}
+# 【MinerU 输出结束】
 
-请开始生成大纲："""
-    },
-    "stage2": {
-        "academic": """你现在是一个"学术汇报风 Marp 格式 PPT 文稿生成助手（Stage 2）"。
+# 请开始生成大纲："""
+#     },
+#     "stage2": {
+#         "academic": """你现在是一个"学术汇报风 Marp 格式 PPT 文稿生成助手（Stage 2）"。
 
-**输入**：一份已经由人类或 Stage 1 整体拼接并确认过的 PPT 大纲。
+# **输入**：一份已经由人类或 Stage 1 整体拼接并确认过的 PPT 大纲。
 
-**目标**：根据这份大纲，生成一份可以直接用 Marp 渲染的 Markdown 文稿，风格为学术汇报风。
+# **目标**：根据这份大纲，生成一份可以直接用 Marp 渲染的 Markdown 文稿，风格为学术汇报风。
 
-【大纲】
-{outline}
+# 【大纲】
+# {outline}
 
-请开始生成 Marp Markdown：""",
+# 请开始生成 Marp Markdown：""",
 
-        "popular": """你现在是一个"面向非专业听众的科普 PPT 文稿生成助手（Stage 2）"。
+#         "popular": """你现在是一个"面向非专业听众的科普 PPT 文稿生成助手（Stage 2）"。
 
-**输入**：一份已经由人类或 Stage 1 整体拼接并确认过的 PPT 大纲。
+# **输入**：一份已经由人类或 Stage 1 整体拼接并确认过的 PPT 大纲。
 
-**目标**：将这份大纲转换成一份可以直接用 Marp 渲染的 Markdown 文稿，风格为"科普简介风"。
+# **目标**：将这份大纲转换成一份可以直接用 Marp 渲染的 Markdown 文稿，风格为"科普简介风"。
 
-【大纲】
-{outline}
+# 【大纲】
+# {outline}
 
-请开始生成 Marp Markdown：""",
+# 请开始生成 Marp Markdown：""",
 
-        "business": """你现在是一个"面向投资人 / 业务决策者的商业路演 PPT 文稿生成助手（Stage 2）"。
+#         "business": """你现在是一个"面向投资人 / 业务决策者的商业路演 PPT 文稿生成助手（Stage 2）"。
 
-**输入**：一份已经由人类或 Stage 1 整体拼接并确认过的 PPT 大纲。
+# **输入**：一份已经由人类或 Stage 1 整体拼接并确认过的 PPT 大纲。
 
-**目标**：将这份大纲转换成一份可以直接用 Marp 渲染的 Markdown 文稿，风格为"商业路演风"。
+# **目标**：将这份大纲转换成一份可以直接用 Marp 渲染的 Markdown 文稿，风格为"商业路演风"。
 
-【大纲】
-{outline}
+# 【大纲】
+# {outline}
 
-请开始生成 Marp Markdown："""
-    }
-}
+# 请开始生成 Marp Markdown："""
+#     }
+# }
 
-# Backward compatibility
-STAGE1_PROMPT = _EMBEDDED_TEMPLATES["stage1"]["academic"]
-STAGE2_PROMPT = _EMBEDDED_TEMPLATES["stage2"]["academic"]
+# # Backward compatibility
+# STAGE1_PROMPT = _EMBEDDED_TEMPLATES["stage1"]["academic"]
+# STAGE2_PROMPT = _EMBEDDED_TEMPLATES["stage2"]["academic"]

@@ -26,6 +26,7 @@ async def node_stage2_process(state: WorkflowState) -> Dict[str, Any]:
     merged_outline = state.get("merged_outline", "")
     style = state.get("presentation_style", "academic")
     task_id = state.get("task_id")
+    user_modifications = state.get("user_modifications", "")
 
     if not merged_outline:
         return {
@@ -39,7 +40,8 @@ async def node_stage2_process(state: WorkflowState) -> Dict[str, Any]:
         prompt = format_stage2_prompt(
             style=style,
             outline=merged_outline,
-            task_id=task_id
+            task_id=task_id,
+            user_modifications=user_modifications
         )
 
         # Call LLM asynchronously
@@ -48,6 +50,8 @@ async def node_stage2_process(state: WorkflowState) -> Dict[str, Any]:
             prompt=prompt,
             max_tokens=8000,
             temperature=0.7,
+            task_id=task_id,
+            stage="stage2",
         )
 
         marp_markdown = response.get("content", "")

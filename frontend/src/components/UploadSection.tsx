@@ -314,7 +314,7 @@ export function UploadSection({ onTaskCreated }: UploadSectionProps) {
                                             className="min-h-[120px] font-mono text-sm"
                                         />
                                         <p className="text-[10px] text-zinc-500">
-                                            💡 可用变量：&#123;content&#125;（论文内容）
+                                            💡 可用变量：&#123;content&#125;（论文内容）、&#123;user_modifications&#125;（人类反馈修改建议）
                                         </p>
                                     </div>
 
@@ -332,7 +332,7 @@ export function UploadSection({ onTaskCreated }: UploadSectionProps) {
                                             className="min-h-[120px] font-mono text-sm"
                                         />
                                         <p className="text-[10px] text-zinc-500">
-                                            💡 可用变量：&#123;outline&#125;（合并后的大纲）
+                                            💡 可用变量：&#123;outline&#125;（合并后的大纲）、&#123;user_modifications&#125;（人类反馈修改建议）
                                         </p>
                                     </div>
                                 </div>

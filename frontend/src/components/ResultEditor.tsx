@@ -57,7 +57,7 @@ export function ResultEditor({ taskId, initialMarkdown, onSave }: ResultEditorPr
     };
 
     return (
-        <div className="h-[800px] flex flex-col">
+        <div className="flex flex-col">
             {/* Header */}
             <div className="flex items-center justify-between p-4 border-b border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950">
                 <div className="flex items-center gap-2">
@@ -101,9 +101,13 @@ export function ResultEditor({ taskId, initialMarkdown, onSave }: ResultEditorPr
             {/* Content */}
             <div className="flex-1 overflow-hidden">
                 {viewMode === 'split' && (
-                    <div className="h-full flex flex-col">
-                        {/* Top: Editor */}
-                        <div className="flex-1 overflow-hidden">
+                    <div className="flex flex-col">
+                        {/* 预览容器 */}
+                        <div className="h-[600px] flex flex-col overflow-hidden border-t border-zinc-200 dark:border-zinc-800">
+                            <MarpPreview markdown={markdown} taskId={taskId} />
+                        </div>
+                        {/* 编辑器容器 */}
+                        <div className="h-[400px] flex flex-col overflow-hidden">
                             <MarkdownEditor
                                 value={markdown}
                                 onChange={setMarkdown}
@@ -112,15 +116,11 @@ export function ResultEditor({ taskId, initialMarkdown, onSave }: ResultEditorPr
                                 autoSaveDelay={1000}
                             />
                         </div>
-                        {/* Bottom: Preview */}
-                        <div className="flex-1 overflow-hidden border-t border-zinc-200 dark:border-zinc-800">
-                            <MarpPreview markdown={markdown} taskId={taskId} />
-                        </div>
                     </div>
                 )}
 
                 {viewMode === 'editor' && (
-                    <div className="h-full">
+                    <div className="h-[800px] flex flex-col overflow-hidden">
                         <MarkdownEditor
                             value={markdown}
                             onChange={setMarkdown}
@@ -132,7 +132,7 @@ export function ResultEditor({ taskId, initialMarkdown, onSave }: ResultEditorPr
                 )}
 
                 {viewMode === 'preview' && (
-                    <div className="h-full">
+                    <div className="h-[800px] flex flex-col overflow-hidden border-t border-zinc-200 dark:border-zinc-800">
                         <MarpPreview markdown={markdown} taskId={taskId} />
                     </div>
                 )}

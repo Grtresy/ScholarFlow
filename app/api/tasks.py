@@ -69,6 +69,7 @@ class TaskStatusResponse(BaseModel):
     error_message: Optional[str] = None
     needs_human_review: bool = False
     review_points: List[Dict[str, Any]] = []
+    user_modifications: str = ""
 
 
 class TaskResultResponse(BaseModel):

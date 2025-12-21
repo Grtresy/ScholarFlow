@@ -20,6 +20,8 @@ from __future__ import annotations
 
 import asyncio
 import json
+import time
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, AsyncGenerator
 
@@ -27,6 +29,57 @@ from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from app.core.config import get_settings
+
+
+def save_llm_call_log(
+    task_id: str,
+    stage: str,
+    request: Dict[str, Any],
+    response: Dict[str, Any],
+    duration_ms: float,
+) -> None:
+    """Save detailed LLM call log to file.
+
+    Args:
+        task_id: Task identifier
+        stage: Stage name (e.g., "stage1", "stage2")
+        request: Request data (prompt, parameters)
+        response: Response data (content, usage)
+        duration_ms: Call duration in milliseconds
+    """
+    try:
+        log_dir = Path("data/workflow/intermediate") / task_id
+        log_dir.mkdir(parents=True, exist_ok=True)
+
+        log_file = log_dir / f"llm_calls_{stage}.jsonl"
+
+        log_entry = {
+            "timestamp": datetime.now().isoformat(),
+            "stage": stage,
+            "duration_ms": duration_ms,
+            "request": {
+                "prompt": request.get("prompt", ""),
+                "prompt_length": len(request.get("prompt", "")),
+                "model": request.get("model"),
+                "max_tokens": request.get("max_tokens"),
+                "temperature": request.get("temperature"),
+                "system_prompt": request.get("system_prompt", ""),
+                "system_prompt_length": len(request.get("system_prompt", "")),
+            },
+            "response": {
+                "content": response.get("content", ""),
+                "content_length": len(response.get("content", "")),
+                "usage": response.get("usage", {}),
+                "model": response.get("model"),
+                "finish_reason": response.get("finish_reason"),
+            }
+        }
+
+        with open(log_file, 'a', encoding='utf-8') as f:
+            f.write(json.dumps(log_entry, ensure_ascii=False) + '\n')
+
+    except Exception as e:
+        print(f"Warning: Failed to save LLM call log: {e}")
 
 
 def load_global_system_prompt(prompt_key: str = "token_protection") -> Optional[str]:
@@ -182,6 +235,8 @@ class LLMClient:
         max_tokens: int | None = None,
         temperature: float | None = None,
         system_prompt: str | None = None,
+        task_id: str | None = None,
+        stage: str = "unknown",
     ) -> Dict[str, Any]:
         """Complete a prompt using LangChain (asynchronous).
 
@@ -191,10 +246,14 @@ class LLMClient:
             max_tokens: Maximum tokens (defaults to configured max_tokens)
             temperature: Sampling temperature (defaults to configured temperature)
             system_prompt: System prompt to use (defaults to token_protection from global config)
+            task_id: Task identifier for logging (optional)
+            stage: Stage name for logging (e.g., "stage1", "stage2")
 
         Returns:
             Response dict with content and metadata
         """
+        start_time = time.time()
+
         try:
             # Load system prompt if not provided
             if system_prompt is None:
@@ -208,14 +267,47 @@ class LLMClient:
 
             response = await self._client.ainvoke(messages)
 
-            return {
+            duration_ms = (time.time() - start_time) * 1000
+
+            result = {
                 "content": response.content,
                 "usage": getattr(response, "usage_metadata", {}),
                 "model": self.model,
                 "finish_reason": "stop"
             }
 
+            # Save log if task_id is provided
+            if task_id:
+                request_data = {
+                    "prompt": prompt,
+                    "model": model or self.model,
+                    "max_tokens": max_tokens or self.max_tokens,
+                    "temperature": temperature or self.temperature,
+                    "system_prompt": system_prompt or "",
+                }
+                save_llm_call_log(task_id, stage, request_data, result, duration_ms)
+
+            return result
+
         except Exception as e:
+            duration_ms = (time.time() - start_time) * 1000
+            # Save error log if task_id is provided
+            if task_id:
+                request_data = {
+                    "prompt": prompt,
+                    "model": model or self.model,
+                    "max_tokens": max_tokens or self.max_tokens,
+                    "temperature": temperature or self.temperature,
+                    "system_prompt": system_prompt or "",
+                }
+                error_response = {
+                    "content": "",
+                    "usage": {},
+                    "model": self.model,
+                    "finish_reason": "error",
+                    "error": str(e)
+                }
+                save_llm_call_log(task_id, stage, request_data, error_response, duration_ms)
             raise RuntimeError(f"LLM API call failed: {e}")
 
     async def astream(
@@ -351,6 +443,8 @@ async def acall_model(
     model: str | None = None,
     max_tokens: int | None = None,
     temperature: float | None = None,
+    task_id: str | None = None,
+    stage: str = "unknown",
 ) -> Dict[str, Any]:
     """Call the LLM with a prompt and return parsed response (asynchronous).
 
@@ -362,6 +456,8 @@ async def acall_model(
         model: Model name (optional, uses default from config)
         max_tokens: Max tokens (optional, uses default from config)
         temperature: Temperature (optional, uses default from config)
+        task_id: Task identifier for logging (optional)
+        stage: Stage name for logging (e.g., "stage1", "stage2")
 
     Returns:
         Response dict
@@ -371,7 +467,9 @@ async def acall_model(
         prompt=prompt,
         model=model,
         max_tokens=max_tokens,
-        temperature=temperature
+        temperature=temperature,
+        task_id=task_id,
+        stage=stage
     )
 
 

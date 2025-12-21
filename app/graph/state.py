@@ -118,6 +118,7 @@ class WorkflowState(TypedDict, total=False):
     review_points: List[ReviewPoint]
     human_feedback: Dict[str, Any]
     approved: bool
+    user_modifications: str  # User's modification suggestions for regeneration
 
     # ===== Error handling =====
     error_message: str
@@ -203,6 +204,7 @@ def create_initial_state(
         review_points=[],
         human_feedback={},
         approved=False,
+        user_modifications="",
         # Error handling
         error_message="",
         error_details={},

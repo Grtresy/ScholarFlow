@@ -111,6 +111,7 @@ def node_process_feedback(state: WorkflowState) -> Dict[str, Any]:
         return result
     elif action == "regenerate":
         # Request to regenerate - go back to Stage 1
+        # Save user modification suggestions
         result = {
             "status": TaskStatus.STAGE1_PROCESSING.value,
             "approved": False,
@@ -120,6 +121,7 @@ def node_process_feedback(state: WorkflowState) -> Dict[str, Any]:
             "stage1_results": [],
             "stage1_completed": 0,
             "merged_outline": "",
+            "user_modifications": comments,  # Save user modifications for Stage 1
             "current_step": "根据反馈重新生成大纲",
             "progress_percentage": 20.0,
             "updated_at": datetime.now().isoformat(),
