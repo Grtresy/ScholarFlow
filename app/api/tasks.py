@@ -29,7 +29,7 @@ class CreateTaskRequest(BaseModel):
     pdf_path: str = Field(..., description="Path to the PDF file")
     presentation_style: str = Field(
         default="academic",
-        description="Presentation style: academic, popular, or business",
+        description="Presentation style: academic, popular, business, or computational_thinking",
     )
     max_chars: int = Field(default=8000, description="Maximum characters per chunk")
     target_chunks: int = Field(default=3, description="Target number of chunks")
@@ -135,7 +135,7 @@ async def create_task(
         raise HTTPException(
             status_code=400,
             detail=f"Invalid presentation style: {request.presentation_style}. "
-            f"Use: academic, popular, or business",
+            f"Use: academic, popular, business, or computational_thinking",
         )
 
     # Create initial state

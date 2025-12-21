@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button';
 import { TaskStatusResponse } from '@/lib/api';
 import { Toaster } from '@/components/ui/sonner';
 import { Bug } from 'lucide-react';
+import { TeamSection } from '@/components/TeamSection';
 
 export default function Home() {
     const [taskId, setTaskId] = useState<string | null>(null);
@@ -81,7 +82,19 @@ export default function Home() {
 
                 <div className="transition-all duration-500 ease-in-out">
                     {view === 'upload' && (
-                        <UploadSection onTaskCreated={handleTaskCreated} />
+                        <div className="space-y-12"> 
+                            {/* 使用 div 包裹，增加 space-y 保持间距 */}
+                            <UploadSection onTaskCreated={handleTaskCreated} />
+                            
+                            {/* 这里的分割线可以视觉上区分功能区与展示区 */}
+                            <div className="relative">
+                                <div className="absolute inset-0 flex items-center" aria-hidden="true">
+                                    <div className="w-full border-t border-zinc-200 dark:border-zinc-800"></div>
+                                </div>
+                            </div>
+
+                            <TeamSection />
+                        </div>
                     )}
 
                     {view === 'processing' && taskId && (

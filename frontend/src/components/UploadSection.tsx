@@ -21,7 +21,7 @@ type StyleMode = 'preset' | 'custom';
 
 interface StyleConfig {
     mode: StyleMode;
-    presetStyle?: 'academic' | 'popular' | 'business';
+    presetStyle?: 'academic' | 'popular' | 'business' | 'computational_thinking';
     customStage1Prompt?: string;
     customStage2Prompt?: string;
 }
@@ -269,6 +269,21 @@ export function UploadSection({ onTaskCreated }: UploadSectionProps) {
                                         <div className="font-medium">商务风格</div>
                                         <div className="text-xs text-zinc-500 mt-1">
                                             向投资人、客户展示商业价值
+                                        </div>
+                                    </button>
+
+                                    <button
+                                        type="button"
+                                        onClick={() => setStyleConfig({ mode: 'preset', presetStyle: 'computational_thinking' })}
+                                        className={`p-3 rounded-lg border text-left transition-colors ${
+                                            styleConfig.mode === 'preset' && styleConfig.presetStyle === 'computational_thinking'
+                                                ? 'border-blue-500 bg-blue-50 dark:bg-blue-950/20'
+                                                : 'border-zinc-200 dark:border-zinc-700 hover:border-zinc-300'
+                                        }`}
+                                    >
+                                        <div className="font-medium">计算思维风格</div>
+                                        <div className="text-xs text-zinc-500 mt-1">
+                                            面向计算思维课程，突出问题抽象与算法设计
                                         </div>
                                     </button>
 

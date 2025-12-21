@@ -29,6 +29,7 @@ class PresentationStyle(str, Enum):
     ACADEMIC = "academic"
     POPULAR = "popular"
     BUSINESS = "business"
+    COMPUTATIONAL_THINKING = "computational_thinking"
 
 
 class ChunkData(TypedDict):
